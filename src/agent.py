@@ -1,0 +1,250 @@
+"""LangGraph-based agent for orchestrating MCP tools."""
+
+import logging
+from typing import Dict, List, Any, TypedDict
+from langgraph.graph import StateGraph, END
+from src.mcp_tools import tool_registry
+from src.llm import llm_client
+
+logger = logging.getLogger(__name__)
+
+
+class AgentState(TypedDict):
+    """State for the agentic workflow."""
+    user_query: str
+    understanding: Dict[str, Any]
+    selected_tools: List[str]
+    tool_results: List[Dict[str, Any]]
+    final_response: str
+    reasoning: List[Dict[str, Any]]
+
+
+class CodeGraphAgent:
+    """Intelligent agent that orchestrates MCP tools to answer user questions."""
+    
+    def __init__(self):
+        """Initialize the agent."""
+        self.workflow = self._create_workflow()
+    
+    def _create_workflow(self) -> StateGraph:
+        """Create the LangGraph workflow."""
+        workflow = StateGraph(AgentState)
+        
+        # Add nodes
+        workflow.add_node("understand_query", self._understand_query)
+        workflow.add_node("execute_tools", self._execute_tools)
+        workflow.add_node("generate_response", self._generate_response)
+        
+        # Add edges
+        workflow.set_entry_point("understand_query")
+        workflow.add_edge("understand_query", "execute_tools")
+        workflow.add_edge("execute_tools", "generate_response")
+        workflow.add_edge("generate_response", END)
+        
+        return workflow.compile()
+    
+    async def _understand_query(self, state: AgentState) -> AgentState:
+        """Understand the user query and select appropriate tools."""
+        try:
+            available_tools = tool_registry.list_tools()
+            understanding = await llm_client.analyze_query_and_select_tools(
+                state["user_query"], available_tools
+            )
+            
+            state["understanding"] = understanding
+            state["selected_tools"] = understanding.get("selected_tools", [])
+            
+            # Add reasoning with LLM details
+            reasoning_step = {
+                "step": "query_understanding",
+                "description": "Analyzed user query and selected tools",
+                "understanding": understanding.get("understanding", ""),
+                "selected_tools": state["selected_tools"],
+                "reasoning": understanding.get("reasoning", ""),
+                "query_type": understanding.get("query_type", "general"),
+                "expected_insights": understanding.get("expected_insights", ""),
+                "llm_analysis": understanding.get("llm_analysis", ""),
+                "intelligence_level": understanding.get("intelligence_level", "LLM-powered"),
+                "llm_reasoning_details": understanding.get("llm_reasoning_details", {})
+            }
+            state["reasoning"] = [reasoning_step]
+            
+        except Exception as e:
+            logger.error(f"Error understanding query: {e}")
+            state["understanding"] = {"error": str(e)}
+            state["selected_tools"] = []
+            state["reasoning"] = [{"step": "error", "description": str(e)}]
+        
+        return state
+    
+    async def _execute_tools(self, state: AgentState) -> AgentState:
+        """Execute the selected tools."""
+        tool_results = []
+        
+        logger.info(f"Executing tools. Selected tools: {state['selected_tools']}")
+        
+        # If no tools were selected, try to find a relevant tool based on keywords
+        if not state["selected_tools"]:
+            logger.warning("No tools selected, attempting keyword-based selection")
+            state["selected_tools"] = self._select_tools_by_keywords(state["user_query"])
+            logger.info(f"Keyword-based selection result: {state['selected_tools']}")
+        
+        for tool_name in state["selected_tools"]:
+            try:
+                result = tool_registry.execute_tool(tool_name)
+                tool_results.append(result)
+                
+                # Add reasoning
+                reasoning_step = {
+                    "step": "tool_execution",
+                    "tool_name": tool_name,
+                    "description": f"Executed {tool_name}",
+                    "result_count": result.get("result_count", 0),
+                    "category": result.get("category", "")
+                }
+                state["reasoning"].append(reasoning_step)
+                
+            except Exception as e:
+                logger.error(f"Error executing tool {tool_name}: {e}")
+                tool_results.append({
+                    "tool_name": tool_name,
+                    "error": str(e),
+                    "results": []
+                })
+        
+        state["tool_results"] = tool_results
+        return state
+    
+    async def _generate_response(self, state: AgentState) -> AgentState:
+        """Generate final response based on tool results."""
+        try:
+            # Get query type and expected insights from understanding
+            query_type = state["understanding"].get("query_type", "general")
+            expected_insights = state["understanding"].get("expected_insights", "")
+            
+            # Use intelligent response generation
+            response_data = await llm_client.generate_intelligent_response(
+                user_query=state["user_query"],
+                tool_results=state["tool_results"],
+                query_type=query_type,
+                expected_insights=expected_insights
+            )
+            
+            state["final_response"] = response_data["response"]
+            
+            # Add reasoning with LLM details
+            reasoning_step = {
+                "step": "response_generation",
+                "description": "Generated intelligent, contextual response",
+                "response_length": len(response_data["response"]),
+                "tools_used": len(state["tool_results"]),
+                "query_type": query_type,
+                "intelligence_level": response_data["llm_reasoning"]["intelligence_level"],
+                "llm_reasoning": response_data["llm_reasoning"]
+            }
+            state["reasoning"].append(reasoning_step)
+            
+        except Exception as e:
+            logger.error(f"Error generating response: {e}")
+            state["final_response"] = f"Error generating response: {e}"
+        
+        return state
+    
+    def _select_tools_by_keywords(self, query: str) -> List[str]:
+        """Select tools based on keyword matching when LLM selection fails."""
+        query_lower = query.lower()
+        available_tools = tool_registry.list_tools()
+        selected_tools = []
+        
+        # Keyword mappings
+        keyword_mappings = {
+            "vulnerable": ["vulnerable_dependencies_summary", "cve_impact_analysis", "find_customer_facing_vulnerable_apis"],
+            "dependency": ["vulnerable_dependencies_summary", "dependency_license_audit", "cve_impact_analysis"],
+            "security": ["vulnerable_dependencies_summary", "cve_impact_analysis", "find_customer_facing_vulnerable_apis", "dependency_license_audit"],
+            "complex": ["complex_methods_analysis", "refactoring_priority_matrix"],
+            "refactor": ["complex_methods_analysis", "refactoring_priority_matrix", "architectural_bottlenecks"],
+            "developer": ["developer_activity_summary", "file_ownership_analysis", "find_module_experts"],
+            "team": ["developer_activity_summary", "file_ownership_analysis", "find_module_experts"],
+            "architecture": ["architectural_bottlenecks", "refactoring_priority_matrix", "co_changed_files_analysis"],
+            "large": ["large_files_analysis", "complex_methods_analysis"],
+            "file": ["large_files_analysis", "file_ownership_analysis", "co_changed_files_analysis"]
+        }
+        
+        # Find matching keywords
+        for keyword, tool_names in keyword_mappings.items():
+            if keyword in query_lower:
+                for tool_name in tool_names:
+                    if tool_name in [t["name"] for t in available_tools] and tool_name not in selected_tools:
+                        selected_tools.append(tool_name)
+        
+        # If still no tools found, return the most relevant security tool for vulnerability queries
+        if not selected_tools and any(word in query_lower for word in ["vulnerable", "dependency", "security"]):
+            if "vulnerable_dependencies_summary" in [t["name"] for t in available_tools]:
+                selected_tools.append("vulnerable_dependencies_summary")
+        
+        logger.info(f"Keyword-based tool selection: {selected_tools}")
+        return selected_tools
+
+    def _prepare_context(self, state: AgentState) -> str:
+        """Prepare context from tool results for LLM."""
+        context_parts = []
+        
+        if not state["tool_results"]:
+            return "No tool results available. Please try a different query or check if the selected tools are working properly."
+        
+        for result in state["tool_results"]:
+            if "error" in result:
+                context_parts.append(f"Tool {result['tool_name']}: Error - {result['error']}")
+                continue
+            
+            context_parts.append(f"Tool: {result['tool_name']}")
+            context_parts.append(f"Description: {result['description']}")
+            context_parts.append(f"Category: {result['category']}")
+            context_parts.append(f"Results ({result['result_count']} items):")
+            
+            # Add sample results
+            for i, item in enumerate(result['results'][:5]):  # Show first 5 results
+                context_parts.append(f"  {i+1}. {item}")
+            
+            if len(result['results']) > 5:
+                context_parts.append(f"  ... and {len(result['results']) - 5} more results")
+            
+            context_parts.append("")
+        
+        return "\n".join(context_parts)
+    
+    async def process_query(self, user_query: str) -> Dict[str, Any]:
+        """Process a user query through the agent workflow."""
+        initial_state = AgentState(
+            user_query=user_query,
+            understanding={},
+            selected_tools=[],
+            tool_results=[],
+            final_response="",
+            reasoning=[]
+        )
+        
+        try:
+            final_state = await self.workflow.ainvoke(initial_state)
+            return {
+                "query": user_query,
+                "response": final_state["final_response"],
+                "understanding": final_state["understanding"],
+                "tools_used": final_state["selected_tools"],
+                "tool_results": final_state["tool_results"],
+                "reasoning": final_state["reasoning"]
+            }
+        except Exception as e:
+            logger.error(f"Error in agent workflow: {e}")
+            return {
+                "query": user_query,
+                "response": f"Error processing query: {e}",
+                "understanding": {"error": str(e)},
+                "tools_used": [],
+                "tool_results": [],
+                "reasoning": [{"step": "workflow_error", "description": str(e)}]
+            }
+
+
+# Global agent instance
+agent = CodeGraphAgent()
