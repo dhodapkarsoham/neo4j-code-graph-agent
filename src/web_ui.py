@@ -12,6 +12,8 @@ from src.mcp_tools import tool_registry
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+# Suppress noisy neo4j driver logs
+logging.getLogger('neo4j').setLevel(logging.ERROR)
 
 app = FastAPI(title="Code Graph Agent", version="1.0.0")
 
@@ -40,6 +42,8 @@ async def get_ui():
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -55,6 +59,23 @@ async def get_ui():
         .quality-badge { background: linear-gradient(135deg, #20B2AA 0%, #008B8B 100%); }
         .custom-badge { background: linear-gradient(135deg, #808080 0%, #696969 100%); }
         .glass-effect { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.9); }
+            .stop-btn:hover { background-color: #D43300 !important; }
+            /* Rich text styling for prettier responses */
+            .rich-text { color: #1f2937; line-height: 1.7; }
+            .rich-text h1, .rich-text h2, .rich-text h3, .rich-text h4 { color: #0f172a; font-weight: 700; margin-top: 1rem; margin-bottom: 0.5rem; }
+            .rich-text h1 { font-size: 1.5rem; }
+            .rich-text h2 { font-size: 1.375rem; }
+            .rich-text h3 { font-size: 1.25rem; }
+            .rich-text p { margin: 0.5rem 0; }
+            .rich-text ul { list-style: disc; margin-left: 1.25rem; padding-left: 0.5rem; }
+            .rich-text ol { list-style: decimal; margin-left: 1.25rem; padding-left: 0.5rem; }
+            .rich-text li { margin: 0.25rem 0; }
+            .rich-text blockquote { border-left: 4px solid #93c5fd; padding-left: 0.75rem; color: #374151; background: #f8fafc; border-radius: 0.25rem; }
+            .rich-text code { background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+            .rich-text pre { background: #0b2533; color: #e5e7eb; padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; }
+            .rich-text table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; }
+            .rich-text th, .rich-text td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; text-align: left; }
+            .rich-text th { background: #f3f4f6; font-weight: 600; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen" style="font-family: 'Public Sans', sans-serif;">
@@ -71,6 +92,7 @@ async def get_ui():
             const [loading, setLoading] = useState(false);
             const [tools, setTools] = useState([]);
             const [showCreateTool, setShowCreateTool] = useState(false);
+            const [isStreaming, setIsStreaming] = useState(false);
             const [newTool, setNewTool] = useState({
                 name: '',
                 description: '',
@@ -118,8 +140,10 @@ async def get_ui():
                     let partialAnswer = '';
                     let streamedReasoning = [];
                     let finalized = false;
+                    window.__cga_ws = ws;
 
                     ws.onopen = () => {
+                        setIsStreaming(true);
                         ws.send(JSON.stringify({ query }));
                     };
                     ws.onmessage = (event) => {
@@ -233,10 +257,12 @@ async def get_ui():
                                 setQuery('');
                                 finalized = true;
                                 ws.close();
+                                setIsStreaming(false);
                             } else if (msg.type === 'error') {
                                 setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your request.' }]);
                                 finalized = true;
                                 ws.close();
+                                setIsStreaming(false);
                             }
                         } catch (err) {
                             console.error('Error handling WS message', err);
@@ -261,11 +287,13 @@ async def get_ui():
                         if (!finalized) {
                             restFallback();
                         }
+                        setIsStreaming(false);
                     };
                     ws.onerror = () => {
                         if (!finalized) {
                             restFallback();
                         }
+                        setIsStreaming(false);
                     };
                 } catch (error) {
                     console.error('Error sending query:', error);
@@ -274,6 +302,15 @@ async def get_ui():
                 } finally {
                     setLoading(false);
                 }
+            };
+
+            const stopQuery = () => {
+                try {
+                    if (window.__cga_ws && window.__cga_ws.readyState === 1) {
+                        window.__cga_ws.close();
+                    }
+                } catch (e) {}
+                setIsStreaming(false);
             };
 
             const testTool = async (toolName) => {
@@ -391,7 +428,14 @@ async def get_ui():
             };
 
             const formatResponse = (content) => {
-                return content.replace(/\\n/g, '<br>').replace(/\\"/g, '"');
+                try {
+                    if (window.marked && window.DOMPurify) {
+                        const html = window.marked.parse(content || '');
+                        return window.DOMPurify.sanitize(html);
+                    }
+                } catch (e) {}
+                // Fallback minimal formatting
+                return (content || '').replace(/\\n/g, '<br>').replace(/\\"/g, '"');
             };
 
             const formatReasoning = (reasoning) => {
@@ -549,13 +593,22 @@ async def get_ui():
                                             rows="5"
                                             onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendQuery()}
                                         />
-                                        <button
-                                            onClick={sendQuery}
-                                            disabled={loading || !query.trim()}
-                                            className="neo4j-primary text-white px-8 py-4 rounded-2xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all duration-200"
-                                        >
-                                            {loading ? '🤔 Thinking...' : '🚀 Ask Question'}
-                                        </button>
+                                        <div className="flex space-x-3">
+                                            <button
+                                                onClick={sendQuery}
+                                                disabled={loading || isStreaming || !query.trim()}
+                                                className="neo4j-primary text-white px-8 py-4 rounded-2xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all duration-200"
+                                            >
+                                                {loading || isStreaming ? '🤔 Thinking...' : '🚀 Ask Question'}
+                                            </button>
+                                            <button
+                                                onClick={stopQuery}
+                                                disabled={!isStreaming}
+                                                className="bg-gray-500 text-white px-6 py-4 rounded-2xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed stop-btn transition-all duration-200"
+                                            >
+                                                ⏹ Stop
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -605,7 +658,7 @@ async def get_ui():
                                                                         <span className="text-2xl mr-3 text-green-600">🤖</span>
                                                                         <span className="font-bold text-lg text-gray-700">Agent</span>
                                                                     </div>
-                                                                    <div className="text-gray-800 leading-relaxed" dangerouslySetInnerHTML={{ __html: formatResponse(group.answer.content) }} />
+                                                                    <div className="rich-text leading-relaxed" dangerouslySetInnerHTML={{ __html: formatResponse(group.answer.content) }} />
                                                                     {group.answer.reasoning && (
                                                                         <details className="mt-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
                                                                             <summary className="cursor-pointer font-semibold text-blue-800 p-4 flex items-center space-x-2 hover:bg-blue-100 rounded-t-xl transition-colors">

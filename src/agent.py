@@ -290,7 +290,13 @@ class CodeGraphAgent:
             yield {"type": "tools_selected", "data": {"tools": selected_tools, "fallback": True}}
 
         for tool_name in selected_tools:
-            yield {"type": "tool_execution_start", "data": {"tool": tool_name}}
+            # Include the tool's Cypher for client-side visualization
+            try:
+                tool_obj = tool_registry.get_tool_by_name(tool_name)
+                tool_cypher = tool_obj.query if tool_obj else None
+            except Exception:
+                tool_cypher = None
+            yield {"type": "tool_execution_start", "data": {"tool": tool_name, "cypher": tool_cypher}}
             try:
                 result = tool_registry.execute_tool(tool_name)
                 tool_results.append(result)
