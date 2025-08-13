@@ -67,6 +67,7 @@ async def get_ui():
             const [activeTab, setActiveTab] = useState('query');
             const [query, setQuery] = useState('');
             const [messages, setMessages] = useState([]);
+            const [collapsedGroups, setCollapsedGroups] = useState({});
             const [loading, setLoading] = useState(false);
             const [tools, setTools] = useState([]);
             const [showCreateTool, setShowCreateTool] = useState(false);
@@ -96,6 +97,11 @@ async def get_ui():
                 } catch (error) {
                     console.error('Error loading tools:', error);
                 }
+            };
+
+            const clearChat = () => {
+                setMessages([]);
+                setCollapsedGroups({});
             };
 
             const sendQuery = async () => {
@@ -479,6 +485,28 @@ async def get_ui():
                 }).join('');
             };
 
+            const groupMessages = (msgs) => {
+                const groups = [];
+                let i = 0;
+                while (i < msgs.length) {
+                    const current = msgs[i];
+                    if (current.role === 'user') {
+                        const next = msgs[i + 1];
+                        if (next && next.role === 'assistant') {
+                            groups.push({ question: current, answer: next });
+                            i += 2;
+                        } else {
+                            groups.push({ question: current, answer: null });
+                            i += 1;
+                        }
+                    } else {
+                        groups.push({ question: null, answer: current });
+                        i += 1;
+                    }
+                }
+                return groups;
+            };
+
             return (
                 <div className="min-h-screen bg-gray-50">
                     {/* Header */}
@@ -531,44 +559,72 @@ async def get_ui():
                                     </div>
                                 </div>
 
-                                {/* Messages */}
+                                {/* Messages grouped into collapsible QnA pairs and Clear Chat button */}
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-xl font-semibold text-gray-800">Conversation</h3>
+                                    {messages.length > 0 && (
+                                        <button onClick={clearChat} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-red-600 transition-colors duration-200">
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+
                                 {messages.length > 0 && (
-                                    <div className="space-y-6">
-                                        {messages.map((message, index) => (
-                                            <div key={index} className={`glass-effect p-6 rounded-2xl shadow-lg ${message.role === 'user' ? 'border-l-4 border-blue-500' : 'border-l-4 border-green-500'}`}>
-                                                <div className="flex items-center mb-3">
-                                                    <span className={`text-2xl mr-3 ${message.role === 'user' ? 'text-blue-600' : 'text-green-600'}`}>
-                                                        {message.role === 'user' ? '👤' : '🤖'}
-                                                    </span>
-                                                    <span className="font-bold text-lg text-gray-700">
-                                                        {message.role === 'user' ? 'You' : 'Agent'}
-                                                    </span>
-                                                </div>
-                                                <div 
-                                                    className="text-gray-800 leading-relaxed"
-                                                    dangerouslySetInnerHTML={{ __html: formatResponse(message.content) }}
-                                                />
-                                                
-                                                {/* Reasoning Process - Only for Agent responses */}
-                                                {message.role === 'assistant' && message.reasoning && (
-                                                    <details className="mt-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
-                                                        <summary className="cursor-pointer font-semibold text-blue-800 p-4 flex items-center space-x-2 hover:bg-blue-100 rounded-t-xl transition-colors">
-                                                            <span>🤔</span>
-                                                            <span>Agent Reasoning Process</span>
-                                                            <span className="bg-blue-200 text-blue-800 px-2 py-1 rounded-full text-xs">
-                                                                {message.reasoning.length} steps
-                                                            </span>
+                                    <div className="space-y-4">
+                                        {groupMessages(messages).map((group, idx) => {
+                                            const groupId = `g-${idx}`;
+                                            const collapsed = !!collapsedGroups[groupId];
+                                            return (
+                                                <div key={groupId} className="glass-effect rounded-2xl shadow-lg border border-gray-100">
+                                                    <details open={!collapsed} onToggle={(e) => {
+                                                        const isOpen = e.target.open;
+                                                        setCollapsedGroups(prev => ({ ...prev, [groupId]: !isOpen }));
+                                                    }}>
+                                                        <summary className="cursor-pointer p-4 flex items-center justify-between hover:bg-gray-50 rounded-t-2xl">
+                                                            <div className="flex items-center space-x-3">
+                                                                <span className="text-blue-600">👤</span>
+                                                                <span className="font-semibold text-gray-800 truncate max-w-[60vw]" title={group.question ? group.question.content : 'Answer'}>
+                                                                    {group.question ? group.question.content : 'Answer'}
+                                                                </span>
+                                                            </div>
+                                                            <span className="text-gray-500 text-sm">{collapsed ? 'Expand' : 'Collapse'}</span>
                                                         </summary>
-                                                        <div className="p-4 border-t border-blue-200">
-                                                            <div 
-                                                                className="space-y-2"
-                                                                dangerouslySetInnerHTML={{ __html: formatReasoning(message.reasoning) }}
-                                                            />
+                                                        <div className="p-4 border-t border-gray-100">
+                                                            {group.question && (
+                                                                <div className="mb-4">
+                                                                    <div className="flex items-center mb-2">
+                                                                        <span className="text-2xl mr-3 text-blue-600">👤</span>
+                                                                        <span className="font-bold text-lg text-gray-700">You</span>
+                                                                    </div>
+                                                                    <div className="text-gray-800 leading-relaxed" dangerouslySetInnerHTML={{ __html: formatResponse(group.question.content) }} />
+                                                                </div>
+                                                            )}
+                                                            {group.answer && (
+                                                                <div className="">
+                                                                    <div className="flex items-center mb-2">
+                                                                        <span className="text-2xl mr-3 text-green-600">🤖</span>
+                                                                        <span className="font-bold text-lg text-gray-700">Agent</span>
+                                                                    </div>
+                                                                    <div className="text-gray-800 leading-relaxed" dangerouslySetInnerHTML={{ __html: formatResponse(group.answer.content) }} />
+                                                                    {group.answer.reasoning && (
+                                                                        <details className="mt-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+                                                                            <summary className="cursor-pointer font-semibold text-blue-800 p-4 flex items-center space-x-2 hover:bg-blue-100 rounded-t-xl transition-colors">
+                                                                                <span>🤔</span>
+                                                                                <span>Agent Reasoning Process</span>
+                                                                                <span className="bg-blue-200 text-blue-800 px-2 py-1 rounded-full text-xs">{group.answer.reasoning.length} steps</span>
+                                                                            </summary>
+                                                                            <div className="p-4 border-t border-blue-200">
+                                                                                <div className="space-y-2" dangerouslySetInnerHTML={{ __html: formatReasoning(group.answer.reasoning) }} />
+                                                                            </div>
+                                                                        </details>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </details>
-                                                )}
-                                            </div>
-                                        ))}
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
