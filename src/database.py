@@ -15,6 +15,7 @@ class Neo4jDatabase:
     def __init__(self):
         """Initialize database connection."""
         self.driver = None
+        self.last_metrics: Optional[Dict[str, Any]] = None
         self._connect()
     
     def _connect(self):
@@ -52,6 +53,13 @@ class Neo4jDatabase:
                 except Exception:
                     pass
                 latency_ms = (time.perf_counter() - start_time) * 1000.0
+                # Store metrics for callers
+                self.last_metrics = {
+                    "rows": len(records),
+                    "latency_ms": latency_ms,
+                    "available_after_ms": available_after_ms,
+                    "consumed_after_ms": consumed_after_ms,
+                }
                 logger.info(
                     "Neo4j metrics | rows=%d latency_ms=%.1f available_after_ms=%s consumed_after_ms=%s",
                     len(records),

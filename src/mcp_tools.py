@@ -328,12 +328,14 @@ class MCPToolRegistry:
         
         try:
             results = db.execute_query(tool.query, query_params)
+            metrics = getattr(db, 'last_metrics', None)
             return {
                 "tool_name": tool.name,
                 "description": tool.description,
                 "category": tool.category,
                 "results": results,
-                "result_count": len(results)
+                "result_count": len(results),
+                "db_metrics": metrics
             }
         except Exception as e:
             logger.error(f"Error executing tool {tool_name}: {e}")

@@ -207,7 +207,8 @@ async def get_ui():
                                     description: `Executed ${msg.data.tool}`,
                                     tool_name: msg.data.tool,
                                     result_count: msg.data.result_count,
-                                    category: msg.data.category
+                                    category: msg.data.category,
+                                    db_metrics: msg.data.db_metrics || null,
                                 });
                                 setMessages(prev => {
                                     const updated = [...prev];
@@ -461,6 +462,14 @@ async def get_ui():
                     if (step.category) {
                         stepHtml += `<div class="text-sm text-blue-600 mb-2">🏷️ Category: ${step.category}</div>`;
                     }
+                    if (step.db_metrics) {
+                        const m = step.db_metrics;
+                        const latency = (m && m.latency_ms != null) ? Number(m.latency_ms).toFixed(1) : '?';
+                        const rows = (m && m.rows != null) ? m.rows : '?';
+                        const avail = (m && m.available_after_ms != null) ? m.available_after_ms : '?';
+                        const consumed = (m && m.consumed_after_ms != null) ? m.consumed_after_ms : '?';
+                        stepHtml += `<div class="text-xs text-gray-600 mb-2">⏱️ Query Metrics: latency ${latency} ms, rows ${rows}, avail ${avail} ms, consumed ${consumed} ms</div>`;
+                    }
                     
                     // Understanding and reasoning
                     if (step.understanding) {
@@ -489,6 +498,18 @@ async def get_ui():
                                     ${llmDetails.llm_model ? `<div class="text-sm"><strong>Model:</strong> ${llmDetails.llm_model}</div>` : ''}
                                     ${llmDetails.temperature ? `<div class="text-sm"><strong>Temperature:</strong> ${llmDetails.temperature}</div>` : ''}
                                     ${llmDetails.max_tokens ? `<div class="text-sm"><strong>Max Tokens:</strong> ${llmDetails.max_tokens}</div>` : ''}
+                                    ${llmDetails.metrics ? `
+                                        <div class="text-sm">
+                                            <strong>LLM Metrics:</strong>
+                                            <ul class="ml-4 mt-1 list-disc">
+                                                <li>Latency: ${Number(llmDetails.metrics.latency_ms).toFixed(1)} ms</li>
+                                                <li>Prompt tokens: ${llmDetails.metrics.prompt_tokens ?? '?'}</li>
+                                                <li>Completion tokens: ${llmDetails.metrics.completion_tokens ?? '?'}</li>
+                                                <li>Total tokens: ${llmDetails.metrics.total_tokens ?? '?'}</li>
+                                                
+                                            </ul>
+                                        </div>
+                                    ` : ''}
                                     ${llmDetails.query_type ? `<div class="text-sm"><strong>Query Type:</strong> ${llmDetails.query_type}</div>` : ''}
                                     ${llmDetails.expected_insights ? `<div class="text-sm"><strong>Expected Insights:</strong> ${llmDetails.expected_insights}</div>` : ''}
                                     ${llmDetails.tool_results_summary ? `

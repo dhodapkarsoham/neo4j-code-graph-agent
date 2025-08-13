@@ -100,7 +100,8 @@ class CodeGraphAgent:
                     "tool_name": tool_name,
                     "description": f"Executed {tool_name}",
                     "result_count": result.get("result_count", 0),
-                    "category": result.get("category", "")
+                    "category": result.get("category", ""),
+                    "db_metrics": result.get("db_metrics")
                 }
                 state["reasoning"].append(reasoning_step)
                 
@@ -306,13 +307,15 @@ class CodeGraphAgent:
                     "tool_name": tool_name,
                     "description": f"Executed {tool_name}",
                     "result_count": result.get("result_count", 0),
-                    "category": result.get("category", "")
+                    "category": result.get("category", ""),
+                    "db_metrics": result.get("db_metrics")
                 })
                 # Stream summarized result (avoid huge payloads)
                 summary = {
                     "tool": tool_name,
                     "result_count": result.get("result_count", 0),
                     "category": result.get("category", ""),
+                    "db_metrics": result.get("db_metrics"),
                 }
                 yield {"type": "tool_execution_result", "data": summary}
             except Exception as e:

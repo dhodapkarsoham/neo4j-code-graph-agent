@@ -16,6 +16,7 @@ class AzureOpenAIClient:
     def __init__(self):
         """Initialize Azure OpenAI client."""
         self.client = None
+        self.last_metrics: Optional[Dict[str, Any]] = None
         self._initialize_client()
     
     def _initialize_client(self):
@@ -86,18 +87,23 @@ class AzureOpenAIClient:
             except Exception:
                 pass
 
-            # Estimate cost (best-effort)
             model_name = settings.azure_openai_deployment_name or "unknown"
-            cost_estimate = self._estimate_cost_usd(model_name, prompt_tokens, completion_tokens)
+
+            self.last_metrics = {
+                "model": model_name,
+                "latency_ms": latency_ms,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            }
 
             logger.info(
-                "LLM metrics | model=%s latency_ms=%.1f prompt_tokens=%s completion_tokens=%s total_tokens=%s estimated_cost_usd=%s",
+                "LLM metrics | model=%s latency_ms=%.1f prompt_tokens=%s completion_tokens=%s total_tokens=%s",
                 model_name,
                 latency_ms,
                 str(prompt_tokens) if prompt_tokens is not None else "?",
                 str(completion_tokens) if completion_tokens is not None else "?",
                 str(total_tokens) if total_tokens is not None else "?",
-                f"{cost_estimate:.6f}" if cost_estimate is not None else "?",
             )
             
             return response.choices[0].message.content.strip()
@@ -106,35 +112,7 @@ class AzureOpenAIClient:
             logger.error(f"Error generating response: {e}")
             raise
 
-    def _estimate_cost_usd(self, model: str, prompt_tokens: Optional[int], completion_tokens: Optional[int]) -> Optional[float]:
-        """Best-effort cost estimate in USD based on static pricing table.
-        If tokens are missing or model unknown, returns None.
-        NOTE: These are approximate and may not reflect your negotiated pricing.
-        """
-        if prompt_tokens is None and completion_tokens is None:
-            return None
-        # Prices per 1K tokens (approx; update as needed)
-        pricing_per_1k = {
-            # Common mappings; adjust to your Azure deployments
-            "gpt-4o": {"input": 5.00, "output": 15.00},
-            "gpt-4o-mini": {"input": 0.150, "output": 0.600},
-            "gpt-4-turbo": {"input": 10.00, "output": 30.00},
-            "gpt-4": {"input": 30.00, "output": 60.00},
-            "gpt-35-turbo": {"input": 0.50, "output": 1.50},
-        }
-        # Normalize lookup by containment (deployment names often prefix the base model)
-        base = None
-        lower = model.lower()
-        for key in pricing_per_1k.keys():
-            if key in lower:
-                base = key
-                break
-        if base is None:
-            return None
-        prices = pricing_per_1k[base]
-        p = (prompt_tokens or 0) / 1000.0 * prices["input"]
-        c = (completion_tokens or 0) / 1000.0 * prices["output"]
-        return p + c
+    # Cost estimation intentionally removed to avoid confusion; keep tokens and latency only
 
     async def analyze_query_and_select_tools(
         self,
@@ -207,8 +185,10 @@ Be intelligent and contextual. Don't just match keywords - understand the intent
                 max_tokens=1000
             )
             
-            # Add the raw LLM response to reasoning
+            # Add the raw LLM response to reasoning and metrics
             llm_reasoning["raw_response"] = response
+            if self.last_metrics:
+                llm_reasoning["metrics"] = self.last_metrics
             
             # Debug logging
             logger.info(f"LLM Response for query '{user_query}': {response[:200]}...")
@@ -324,6 +304,8 @@ Be professional, insightful, and actionable. Use the actual data provided."""
             
             llm_reasoning["raw_response"] = response
             llm_reasoning["intelligence_level"] = "LLM-powered"
+            if self.last_metrics:
+                llm_reasoning["metrics"] = self.last_metrics
             
             # Minor post-formatting: ensure markdown headings and spacing are clean
             pretty = response.replace('\r\n', '\n')
