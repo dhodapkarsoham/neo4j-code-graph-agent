@@ -3,7 +3,7 @@
 import json
 import logging
 from typing import Dict, List, Any
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from src.agent import agent
@@ -33,6 +33,9 @@ async def get_ui():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta http-equiv="Pragma" content="no-cache" />
+        <meta http-equiv="Expires" content="0" />
     <title>MCP Code Graph Agent</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -57,7 +60,7 @@ async def get_ui():
 <body class="bg-gray-50 min-h-screen" style="font-family: 'Public Sans', sans-serif;">
     <div id="root"></div>
 
-    <script type="text/babel">
+    <script type="text/babel" data-presets="env,react">
         const { useState, useEffect } = React;
 
         function App() {
@@ -103,20 +106,161 @@ async def get_ui():
                 setMessages(prev => [...prev, userMessage]);
                 
                 try {
-                    const response = await fetch('/api/query', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ query: query })
-                    });
-                    
-                    const data = await response.json();
-                    const assistantMessage = { 
-                        role: 'assistant', 
-                        content: data.response,
-                        reasoning: data.reasoning || []
+                    // Prefer WebSocket streaming if available
+                    const wsUrl = (location.origin.replace('http', 'ws')) + '/ws/query';
+                    const ws = new WebSocket(wsUrl);
+                    let partialAnswer = '';
+                    let streamedReasoning = [];
+                    let finalized = false;
+
+                    ws.onopen = () => {
+                        ws.send(JSON.stringify({ query }));
                     };
-                    setMessages(prev => [...prev, assistantMessage]);
-                    setQuery('');
+                    ws.onmessage = (event) => {
+                        try {
+                            const msg = JSON.parse(event.data);
+                            if (msg.type === 'llm_reasoning_update') {
+                                streamedReasoning.push({
+                                    step: 'query_understanding',
+                                    description: 'LLM analysis update',
+                                    understanding: msg.data.understanding,
+                                    reasoning: msg.data.reasoning,
+                                    llm_analysis: msg.data.llm_analysis,
+                                    intelligence_level: msg.data.intelligence_level,
+                                    llm_reasoning_details: msg.data.llm_reasoning_details,
+                                });
+                                // Rerender by setting state shallow copy
+                                setMessages(prev => {
+                                    const updated = [...prev];
+                                    // Add a live assistant message if not present yet
+                                    if (!updated.find(m => m.__live)) {
+                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                    }
+                                    const last = updated[updated.length - 1];
+                                    last.reasoning = [...streamedReasoning];
+                                    return updated;
+                                });
+                            } else if (msg.type === 'tools_selected') {
+                                streamedReasoning.push({
+                                    step: 'tool_selection',
+                                    description: 'Selected tools',
+                                    selected_tools: msg.data.tools,
+                                    intelligence_level: msg.data.fallback ? 'fallback' : 'LLM-powered'
+                                });
+                                setMessages(prev => {
+                                    const updated = [...prev];
+                                    if (!updated.find(m => m.__live)) {
+                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                    }
+                                    const last = updated[updated.length - 1];
+                                    last.reasoning = [...streamedReasoning];
+                                    return updated;
+                                });
+                            } else if (msg.type === 'tool_execution_start') {
+                                streamedReasoning.push({
+                                    step: 'tool_execution',
+                                    description: `Executing ${msg.data.tool}`,
+                                    tool_name: msg.data.tool
+                                });
+                                setMessages(prev => {
+                                    const updated = [...prev];
+                                    if (!updated.find(m => m.__live)) {
+                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                    }
+                                    const last = updated[updated.length - 1];
+                                    last.reasoning = [...streamedReasoning];
+                                    return updated;
+                                });
+                            } else if (msg.type === 'tool_execution_result') {
+                                streamedReasoning.push({
+                                    step: 'tool_execution',
+                                    description: `Executed ${msg.data.tool}`,
+                                    tool_name: msg.data.tool,
+                                    result_count: msg.data.result_count,
+                                    category: msg.data.category
+                                });
+                                setMessages(prev => {
+                                    const updated = [...prev];
+                                    if (!updated.find(m => m.__live)) {
+                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                    }
+                                    const last = updated[updated.length - 1];
+                                    last.reasoning = [...streamedReasoning];
+                                    return updated;
+                                });
+                            } else if (msg.type === 'llm_response_update') {
+                                partialAnswer = partialAnswer + msg.data.chunk;
+                                setMessages(prev => {
+                                    const updated = [...prev];
+                                    if (!updated.find(m => m.__live)) {
+                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                    }
+                                    const last = updated[updated.length - 1];
+                                    last.content = partialAnswer;
+                                    last.reasoning = [...streamedReasoning];
+                                    return updated;
+                                });
+                            } else if (msg.type === 'reasoning_append') {
+                                streamedReasoning.push(msg.data);
+                                setMessages(prev => {
+                                    const updated = [...prev];
+                                    if (!updated.find(m => m.__live)) {
+                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                    }
+                                    const last = updated[updated.length - 1];
+                                    last.reasoning = [...streamedReasoning];
+                                    return updated;
+                                });
+                            } else if (msg.type === 'final_response') {
+                                setMessages(prev => {
+                                    const updated = [...prev];
+                                    // Replace live message with final
+                                    const idx = updated.findIndex(m => m.__live);
+                                    const finalMsg = { role: 'assistant', content: msg.data.text, reasoning: msg.data.reasoning };
+                                    if (idx >= 0) {
+                                        updated[idx] = finalMsg;
+                                    } else {
+                                        updated.push(finalMsg);
+                                    }
+                                    return updated;
+                                });
+                                setQuery('');
+                                finalized = true;
+                                ws.close();
+                            } else if (msg.type === 'error') {
+                                setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your request.' }]);
+                                finalized = true;
+                                ws.close();
+                            }
+                        } catch (err) {
+                            console.error('Error handling WS message', err);
+                        }
+                    };
+                    const restFallback = async () => {
+                        try {
+                            const response = await fetch('/api/query', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ query })
+                            });
+                            const data = await response.json();
+                            const assistantMessage = { role: 'assistant', content: data.response, reasoning: data.reasoning || [] };
+                            setMessages(prev => [...prev, assistantMessage]);
+                            setQuery('');
+                        } catch (e) {
+                            setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your request.' }]);
+                        }
+                    };
+                    ws.onclose = () => {
+                        if (!finalized) {
+                            restFallback();
+                        }
+                    };
+                    ws.onerror = () => {
+                        if (!finalized) {
+                            restFallback();
+                        }
+                    };
                 } catch (error) {
                     console.error('Error sending query:', error);
                     const errorMessage = { role: 'assistant', content: 'Sorry, there was an error processing your request.' };
@@ -679,7 +823,8 @@ async def get_ui():
              );
          }
 
-        ReactDOM.render(<App />, document.getElementById('root'));
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
@@ -844,6 +989,30 @@ async def query_agent(request: Request):
     except Exception as e:
         logger.error(f"Error processing query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.websocket("/ws/query")
+async def ws_query(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        init = await websocket.receive_json()
+        user_query = init.get("query", "")
+        if not user_query:
+            await websocket.send_json({"type": "error", "data": {"message": "Query is required"}})
+            await websocket.close()
+            return
+
+        # Stream events from agent
+        async for event in agent.stream_query(user_query):
+            await websocket.send_json(event)
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        try:
+            await websocket.send_json({"type": "error", "data": {"message": "Internal error"}})
+        except Exception:
+            pass
+        await websocket.close()
 
 if __name__ == "__main__":
     import uvicorn

@@ -245,6 +245,116 @@ class CodeGraphAgent:
                 "reasoning": [{"step": "workflow_error", "description": str(e)}]
             }
 
+    async def stream_query(self, user_query: str):
+        """Stream agent workflow events for a user query as an async generator.
+
+        Yields structured events that the UI can render in real-time.
+        """
+        # Session start
+        yield {"type": "session_started", "data": {"query": user_query}}
+
+        # Initialize state
+        state = AgentState(
+            user_query=user_query,
+            understanding={},
+            selected_tools=[],
+            tool_results=[],
+            final_response="",
+            reasoning=[]
+        )
+
+        # Understand query
+        try:
+            state = await self._understand_query(state)
+            understanding = state.get("understanding", {})
+            reasoning_step = state.get("reasoning", [{}])[0]
+            yield {"type": "llm_reasoning_update", "data": {
+                "understanding": understanding.get("understanding", ""),
+                "reasoning": understanding.get("reasoning", ""),
+                "llm_analysis": understanding.get("llm_analysis", ""),
+                "intelligence_level": understanding.get("intelligence_level", "LLM-powered"),
+                "llm_reasoning_details": understanding.get("llm_reasoning_details", {})
+            }}
+            yield {"type": "tools_selected", "data": {"tools": state.get("selected_tools", [])}}
+        except Exception as e:
+            logger.error(f"Error understanding query (stream): {e}")
+            yield {"type": "error", "data": {"message": "Failed to analyze query."}}
+            return
+
+        # Execute tools one by one to stream progress
+        tool_results: List[Dict[str, Any]] = []
+        selected_tools = state.get("selected_tools", [])
+        if not selected_tools:
+            # Fallback keyword selection if nothing selected
+            selected_tools = self._select_tools_by_keywords(user_query)
+            yield {"type": "tools_selected", "data": {"tools": selected_tools, "fallback": True}}
+
+        for tool_name in selected_tools:
+            yield {"type": "tool_execution_start", "data": {"tool": tool_name}}
+            try:
+                result = tool_registry.execute_tool(tool_name)
+                tool_results.append(result)
+                # Append reasoning step to state
+                state.setdefault("reasoning", []).append({
+                    "step": "tool_execution",
+                    "tool_name": tool_name,
+                    "description": f"Executed {tool_name}",
+                    "result_count": result.get("result_count", 0),
+                    "category": result.get("category", "")
+                })
+                # Stream summarized result (avoid huge payloads)
+                summary = {
+                    "tool": tool_name,
+                    "result_count": result.get("result_count", 0),
+                    "category": result.get("category", ""),
+                }
+                yield {"type": "tool_execution_result", "data": summary}
+            except Exception as e:
+                logger.error(f"Error executing tool {tool_name} (stream): {e}")
+                tool_results.append({"tool_name": tool_name, "error": "Execution error", "results": []})
+                yield {"type": "tool_execution_error", "data": {"tool": tool_name, "message": "Execution error"}}
+
+        state["tool_results"] = tool_results
+
+        # Generate response and stream chunks
+        try:
+            query_type = state.get("understanding", {}).get("query_type", "general")
+            expected_insights = state.get("understanding", {}).get("expected_insights", "")
+            response_data = await llm_client.generate_intelligent_response(
+                user_query=user_query,
+                tool_results=tool_results,
+                query_type=query_type,
+                expected_insights=expected_insights
+            )
+            full_text: str = response_data.get("response", "")
+
+            # Stream as paragraph chunks for now
+            chunks = [c for c in full_text.split("\n\n") if c.strip()]
+            accumulated = ""
+            for chunk in chunks:
+                accumulated = accumulated + ("\n\n" if accumulated else "") + chunk
+                yield {"type": "llm_response_update", "data": {"chunk": chunk}}
+
+            # Append response generation reasoning to state and send a reasoning update
+            state.setdefault("reasoning", []).append({
+                "step": "response_generation",
+                "description": "Generated intelligent, contextual response",
+                "response_length": len(full_text),
+                "tools_used": len(tool_results),
+                "query_type": query_type,
+                "intelligence_level": response_data.get("llm_reasoning", {}).get("intelligence_level", "LLM-powered"),
+                "llm_reasoning": response_data.get("llm_reasoning", {})
+            })
+            yield {"type": "reasoning_append", "data": state["reasoning"][-1]}
+
+            yield {"type": "final_response", "data": {"text": full_text, "reasoning": state.get("reasoning", [])}}
+        except Exception as e:
+            logger.error(f"Error generating response (stream): {e}")
+            yield {"type": "error", "data": {"message": "Failed to generate response."}}
+            return
+
+        yield {"type": "session_complete", "data": {}}
+
 
 # Global agent instance
 agent = CodeGraphAgent()
