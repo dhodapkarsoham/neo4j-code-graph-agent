@@ -4,6 +4,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from openai import AzureOpenAI
 from src.config import settings
+import re
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +65,39 @@ class AzureOpenAIClient:
                 api_messages.append({"role": "system", "content": system_prompt})
             api_messages.extend(messages)
             
+            start_time = time.perf_counter()
             response = self.client.chat.completions.create(
                 model=settings.azure_openai_deployment_name,
                 messages=api_messages,
                 temperature=temperature,
                 max_tokens=max_tokens
+            )
+            latency_ms = (time.perf_counter() - start_time) * 1000.0
+            # Extract usage if available
+            prompt_tokens = None
+            completion_tokens = None
+            total_tokens = None
+            try:
+                usage = getattr(response, "usage", None)
+                if usage is not None:
+                    prompt_tokens = getattr(usage, "prompt_tokens", None)
+                    completion_tokens = getattr(usage, "completion_tokens", None)
+                    total_tokens = getattr(usage, "total_tokens", None)
+            except Exception:
+                pass
+
+            # Estimate cost (best-effort)
+            model_name = settings.azure_openai_deployment_name or "unknown"
+            cost_estimate = self._estimate_cost_usd(model_name, prompt_tokens, completion_tokens)
+
+            logger.info(
+                "LLM metrics | model=%s latency_ms=%.1f prompt_tokens=%s completion_tokens=%s total_tokens=%s estimated_cost_usd=%s",
+                model_name,
+                latency_ms,
+                str(prompt_tokens) if prompt_tokens is not None else "?",
+                str(completion_tokens) if completion_tokens is not None else "?",
+                str(total_tokens) if total_tokens is not None else "?",
+                f"{cost_estimate:.6f}" if cost_estimate is not None else "?",
             )
             
             return response.choices[0].message.content.strip()
@@ -75,6 +105,36 @@ class AzureOpenAIClient:
         except Exception as e:
             logger.error(f"Error generating response: {e}")
             raise
+
+    def _estimate_cost_usd(self, model: str, prompt_tokens: Optional[int], completion_tokens: Optional[int]) -> Optional[float]:
+        """Best-effort cost estimate in USD based on static pricing table.
+        If tokens are missing or model unknown, returns None.
+        NOTE: These are approximate and may not reflect your negotiated pricing.
+        """
+        if prompt_tokens is None and completion_tokens is None:
+            return None
+        # Prices per 1K tokens (approx; update as needed)
+        pricing_per_1k = {
+            # Common mappings; adjust to your Azure deployments
+            "gpt-4o": {"input": 5.00, "output": 15.00},
+            "gpt-4o-mini": {"input": 0.150, "output": 0.600},
+            "gpt-4-turbo": {"input": 10.00, "output": 30.00},
+            "gpt-4": {"input": 30.00, "output": 60.00},
+            "gpt-35-turbo": {"input": 0.50, "output": 1.50},
+        }
+        # Normalize lookup by containment (deployment names often prefix the base model)
+        base = None
+        lower = model.lower()
+        for key in pricing_per_1k.keys():
+            if key in lower:
+                base = key
+                break
+        if base is None:
+            return None
+        prices = pricing_per_1k[base]
+        p = (prompt_tokens or 0) / 1000.0 * prices["input"]
+        c = (completion_tokens or 0) / 1000.0 * prices["output"]
+        return p + c
 
     async def analyze_query_and_select_tools(
         self,
@@ -153,11 +213,20 @@ Be intelligent and contextual. Don't just match keywords - understand the intent
             # Debug logging
             logger.info(f"LLM Response for query '{user_query}': {response[:200]}...")
             
-            # Parse the JSON response
-            import json
+            # Parse the JSON response robustly
+            import json, re
             try:
-                # Clean the response - remove any leading/trailing whitespace and newlines
                 cleaned_response = response.strip()
+                # Remove common markdown code fences if present
+                if cleaned_response.startswith("```"):
+                    cleaned_response = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned_response)
+                    cleaned_response = re.sub(r"```$", "", cleaned_response).strip()
+                # Extract the first balanced JSON object if extra text exists
+                if not cleaned_response.startswith('{'):
+                    start = cleaned_response.find('{')
+                    end = cleaned_response.rfind('}')
+                    if start != -1 and end != -1 and end > start:
+                        cleaned_response = cleaned_response[start:end+1]
                 result = json.loads(cleaned_response)
                 return {
                     "understanding": result.get("understanding", ""),
@@ -256,8 +325,11 @@ Be professional, insightful, and actionable. Use the actual data provided."""
             llm_reasoning["raw_response"] = response
             llm_reasoning["intelligence_level"] = "LLM-powered"
             
+            # Minor post-formatting: ensure markdown headings and spacing are clean
+            pretty = response.replace('\r\n', '\n')
+            pretty = re.sub(r"\n{3,}", "\n\n", pretty)
             return {
-                "response": response,
+                "response": pretty,
                 "llm_reasoning": llm_reasoning
             }
             

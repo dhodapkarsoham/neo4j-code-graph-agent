@@ -4,6 +4,7 @@ import logging
 from typing import Dict, List, Any, Optional
 from neo4j import GraphDatabase
 from src.config import settings
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,27 @@ class Neo4jDatabase:
         
         try:
             with self.driver.session(database=settings.neo4j_database) as session:
+                start_time = time.perf_counter()
                 result = session.run(query, parameters or {})
-                return [dict(record) for record in result]
+                records = [dict(record) for record in result]
+                # Try to consume summary for timing metrics if available
+                available_after_ms = None
+                consumed_after_ms = None
+                try:
+                    summary = result.consume()
+                    available_after_ms = getattr(summary, "result_available_after", None)
+                    consumed_after_ms = getattr(summary, "result_consumed_after", None)
+                except Exception:
+                    pass
+                latency_ms = (time.perf_counter() - start_time) * 1000.0
+                logger.info(
+                    "Neo4j metrics | rows=%d latency_ms=%.1f available_after_ms=%s consumed_after_ms=%s",
+                    len(records),
+                    latency_ms,
+                    str(available_after_ms) if available_after_ms is not None else "?",
+                    str(consumed_after_ms) if consumed_after_ms is not None else "?",
+                )
+                return records
         except Exception as e:
             logger.error("Query execution failed: An error occurred during query execution")
             raise

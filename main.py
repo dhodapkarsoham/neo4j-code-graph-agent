@@ -1,5 +1,5 @@
-from src.web_ui import app
 import uvicorn
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Use reload for auto-restart on code changes (like nodemon)
+    uvicorn.run("src.web_ui:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["src"]) 
