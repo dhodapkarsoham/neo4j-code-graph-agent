@@ -117,7 +117,3 @@ celerybeat.pid
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# Project specific
-tools.json
-custom_tools.json
