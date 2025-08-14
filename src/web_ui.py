@@ -50,7 +50,7 @@ async def get_ui():
         .neo4j-primary { background: linear-gradient(135deg, #014063 0%, #014063 100%); }
         .neo4j-secondary { background: linear-gradient(135deg, #4C99A4 0%, #4C99A4 100%); }
         .tab-active { background: linear-gradient(135deg, #0A6190 0%, #0A6190 100%); color: white; }
-        .tab-inactive { background: #F2EAD4; color: #4A4A4A; }
+        .tab-inactive { background: #FCF9F6; color: #4A4A4A; }
         .tool-card { background: #FCF9F6; border: 1px solid #90CB62; }
         .category-badge { background: linear-gradient(135deg, #00A3E0 0%, #0072C6 100%); }
         .security-badge { background: linear-gradient(135deg, #FF6F61 0%, #D64541 100%); }
@@ -413,6 +413,17 @@ async def get_ui():
                 }
             };
 
+            const scrollToSection = (category) => {
+                const element = document.getElementById(`${category.toLowerCase()}-tools-section`);
+                if (element) {
+                    element.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'start',
+                        inline: 'nearest'
+                    });
+                }
+            };
+
             const getToolsByCategory = (category) => {
                 return tools.filter(tool => tool.category === category);
             };
@@ -713,19 +724,43 @@ async def get_ui():
                                         <div className="text-3xl font-bold text-blue-600">{tools.length}</div>
                                         <div className="text-base text-gray-600">Total Tools</div>
                                     </div>
-                                    <div className="glass-effect p-6 rounded-2xl shadow-lg text-center">
+                                    <div 
+                                        className="glass-effect p-6 rounded-2xl shadow-lg text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200"
+                                        style={{"--hover-bg": "#F2EAD4"}}
+                                        onMouseEnter={(e) => e.target.style.backgroundColor = "#F2EAD4"}
+                                        onMouseLeave={(e) => e.target.style.backgroundColor = ""}
+                                        onClick={() => scrollToSection('Security')}
+                                    >
                                         <div className="text-3xl font-bold text-red-600">{getToolsByCategory('Security').length}</div>
                                         <div className="text-base text-gray-600">Security Tools</div>
                                     </div>
-                                    <div className="glass-effect p-6 rounded-2xl shadow-lg text-center">
+                                    <div 
+                                        className="glass-effect p-6 rounded-2xl shadow-lg text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200"
+                                        style={{"--hover-bg": "#F2EAD4"}}
+                                        onMouseEnter={(e) => e.target.style.backgroundColor = "#F2EAD4"}
+                                        onMouseLeave={(e) => e.target.style.backgroundColor = ""}
+                                        onClick={() => scrollToSection('Architecture')}
+                                    >
                                         <div className="text-3xl font-bold text-purple-600">{getToolsByCategory('Architecture').length}</div>
                                         <div className="text-base text-gray-600">Architecture Tools</div>
                                     </div>
-                                    <div className="glass-effect p-6 rounded-2xl shadow-lg text-center">
+                                    <div 
+                                        className="glass-effect p-6 rounded-2xl shadow-lg text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200"
+                                        style={{"--hover-bg": "#F2EAD4"}}
+                                        onMouseEnter={(e) => e.target.style.backgroundColor = "#F2EAD4"}
+                                        onMouseLeave={(e) => e.target.style.backgroundColor = ""}
+                                        onClick={() => scrollToSection('Team')}
+                                    >
                                         <div className="text-3xl font-bold text-orange-600">{getToolsByCategory('Team').length}</div>
                                         <div className="text-base text-gray-600">Team Tools</div>
                                     </div>
-                                    <div className="glass-effect p-6 rounded-2xl shadow-lg text-center">
+                                    <div 
+                                        className="glass-effect p-6 rounded-2xl shadow-lg text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200"
+                                        style={{"--hover-bg": "#F2EAD4"}}
+                                        onMouseEnter={(e) => e.target.style.backgroundColor = "#F2EAD4"}
+                                        onMouseLeave={(e) => e.target.style.backgroundColor = ""}
+                                        onClick={() => scrollToSection('Custom')}
+                                    >
                                         <div className="text-3xl font-bold text-gray-600">{getToolsByCategory('Custom').length}</div>
                                         <div className="text-base text-gray-600">Custom Tools</div>
                                     </div>
@@ -808,7 +843,7 @@ async def get_ui():
                                     if (categoryTools.length === 0) return null;
                                     
                                     return (
-                                        <div key={category} className="space-y-4">
+                                        <div key={category} id={`${category.toLowerCase()}-tools-section`} className="space-y-4">
                                             <h3 className="text-2xl font-bold text-gray-800 flex items-center">
                                                 <span className={`inline-block w-4 h-4 rounded-full ${getCategoryBadgeClass(category)} mr-3`}></span>
                                                 {category} Tools ({categoryTools.length})
