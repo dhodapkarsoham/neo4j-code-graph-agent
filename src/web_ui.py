@@ -1,4 +1,4 @@
-"""FastAPI web UI for MCP Code Graph Agent."""
+"""FastAPI web UI for Code Graph Agent."""
 
 import json
 import logging
@@ -38,7 +38,7 @@ async def get_ui():
         <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
         <meta http-equiv="Pragma" content="no-cache" />
         <meta http-equiv="Expires" content="0" />
-    <title>MCP Code Graph Agent</title>
+    <title>Code Graph Agent</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -963,7 +963,7 @@ async def get_ui():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "message": "MCP Code Graph Agent is running"}
+    return {"status": "healthy", "message": "Code Graph Agent is running"}
 
 @app.get("/api/tools")
 async def list_tools():

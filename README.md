@@ -1,5 +1,7 @@
 # 🕵️ Neo4j Code Graph Agent
 
+⚠️ Work in Progress: This repository is actively being developed. Feel free to try it out and provide feedback, but expect some changes and improvements as we development continues.
+
 ### This repository is an extension to [Alex Woolford's](https://www.linkedin.com/in/alexwoolford) Neo4j Code Graph 🙌. <br>
 [Neo4j Code Graph](https://github.com/alexwoolford/neo4j-code-graph) turns your codebase into a queryable knowledge graph and helps find security vulnerabilities, architectural bottlenecks, technical debt hotspots, and team coordination issues with simple Cypher queries.
 
