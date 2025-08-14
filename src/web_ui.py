@@ -709,8 +709,15 @@ async def get_ui():
                         <div className="container mx-auto">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h1 className="text-5xl font-bold mb-2">Code Graph Agent</h1>
-                                    <p className="text-xl opacity-90">Powered by Neo4j</p>
+                                    <h1 className="text-5xl font-bold mb-4">Code Graph Agent</h1>
+                                    <div className="flex items-center space-x-3 text-xl opacity-90">
+                                        <span>Powered by</span>
+                                        <img 
+                                            src="/assets/images/logo-white-RGB-transBG.png" 
+                                            alt="Neo4j" 
+                                            className="h-8 w-auto"
+                                        />
+                                    </div>
                                 </div>
                                 {/* Compact status cluster */}
                                 <div className="text-right">
