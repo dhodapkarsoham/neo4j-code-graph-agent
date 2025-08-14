@@ -52,7 +52,18 @@ async def get_ui():
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         .neo4j-primary { background: linear-gradient(135deg, #014063 0%, #014063 100%); }
-        .neo4j-secondary { background: linear-gradient(135deg, #4C99A4 0%, #4C99A4 100%); }
+        .neo4j-secondary { 
+            background: linear-gradient(135deg, rgba(10, 97, 144, 0.9) 0%, rgba(10, 97, 144, 1) 100%); 
+            border: 2px solid rgba(10, 97, 144, 0.3);
+            box-shadow: 0 4px 12px rgba(10, 97, 144, 0.2);
+            backdrop-filter: blur(8px);
+        }
+        .neo4j-secondary:hover { 
+            background: linear-gradient(135deg, rgba(10, 97, 144, 1) 0%, rgba(0, 60, 99, 1) 100%); 
+            border: 2px solid rgba(10, 97, 144, 0.5);
+            box-shadow: 0 6px 20px rgba(10, 97, 144, 0.3);
+            transform: translateY(-2px);
+        }
         .tab-active { background: linear-gradient(135deg, #0A6190 0%, #0A6190 100%); color: white; }
         .tab-inactive { background: #FCF9F6; color: #4A4A4A; }
         .tool-card { background: #FCF9F6; border: 1px solid #90CB62; }
@@ -878,9 +889,9 @@ async def get_ui():
                                 <div className="text-center">
                                     <button
                                         onClick={() => setShowCreateTool(!showCreateTool)}
-                                        className="neo4j-secondary text-white px-8 py-4 rounded-2xl font-bold text-lg hover:shadow-lg transition-all duration-200"
+                                        className="neo4j-secondary text-white px-8 py-4 rounded-2xl font-semibold text-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
                                     >
-                                        {showCreateTool ? '❌ Cancel' : '➕ Create New Tool'}
+                                        {showCreateTool ? '✕ Cancel' : '✨ Create New Tool'}
                                     </button>
                                 </div>
 
