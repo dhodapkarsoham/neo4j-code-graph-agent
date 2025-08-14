@@ -6,6 +6,7 @@ from typing import Dict, List, Any
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from src.agent import agent
 from src.mcp_tools import tool_registry
 
@@ -16,6 +17,9 @@ logger = logging.getLogger(__name__)
 logging.getLogger('neo4j').setLevel(logging.ERROR)
 
 app = FastAPI(title="Code Graph Agent", version="1.0.0")
+
+# Mount static files
+app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 
 # Add CORS middleware
 app.add_middleware(
@@ -664,7 +668,14 @@ async def get_ui():
                     <div className="neo4j-primary text-white p-12 shadow-lg">
                         <div className="container mx-auto">
                             <h1 className="text-5xl font-bold mb-4">Code Graph Agent</h1>
-                            <p className="text-xl opacity-90">Powered by Neo4j</p>
+                            <div className="flex items-center space-x-3 text-xl opacity-90">
+                                <span>Powered by</span>
+                                <img 
+                                    src="/assets/images/logo-white-RGB-transBG.png" 
+                                    alt="Neo4j" 
+                                    className="h-8 w-auto"
+                                />
+                            </div>
                         </div>
                     </div>
 
