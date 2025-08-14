@@ -60,30 +60,34 @@ async def get_ui():
         .custom-badge { background: linear-gradient(135deg, #808080 0%, #696969 100%); }
         .glass-effect { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.9); }
         
-        /* Neo4j Brand Colors for Agent Reasoning */
+        /* Beautiful Agent Reasoning - Neo4j Cohesive Design */
         .neo4j-reasoning-card { 
-            background: linear-gradient(135deg, #FCF9F6 0%, #FEFCF9 100%); 
-            border-color: #008CC1; 
-            box-shadow: 0 4px 12px rgba(0, 140, 193, 0.1);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(252, 249, 246, 0.98) 100%); 
+            border: 2px solid rgba(10, 97, 144, 0.15); 
+            box-shadow: 0 4px 16px rgba(10, 97, 144, 0.08);
+            backdrop-filter: blur(12px);
         }
         .neo4j-reasoning-header { 
-            background: linear-gradient(135deg, rgba(0, 140, 193, 0.1) 0%, rgba(10, 97, 144, 0.15) 100%);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(0, 140, 193, 0.2);
+            background: linear-gradient(135deg, rgba(10, 97, 144, 0.08) 0%, rgba(10, 97, 144, 0.12) 100%);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(10, 97, 144, 0.2);
             color: #0A6190; 
         }
         .neo4j-reasoning-header:hover { 
-            background: linear-gradient(135deg, rgba(0, 140, 193, 0.15) 0%, rgba(10, 97, 144, 0.2) 100%);
-            border: 1px solid rgba(0, 140, 193, 0.3);
+            background: linear-gradient(135deg, rgba(10, 97, 144, 0.12) 0%, rgba(10, 97, 144, 0.18) 100%);
+            border: 1px solid rgba(10, 97, 144, 0.3);
+            box-shadow: 0 2px 8px rgba(10, 97, 144, 0.15);
         }
         .neo4j-reasoning-badge { 
-            background: #F2EAD4; 
+            background: rgba(252, 249, 246, 0.95); 
             color: #0A6190; 
-            border: 1px solid #008CC1;
+            border: 1px solid rgba(10, 97, 144, 0.25);
+            backdrop-filter: blur(8px);
         }
         .neo4j-reasoning-content { 
-            background: #FCF9F6; 
-            border-top: 2px solid #F2EAD4;
+            background: rgba(252, 249, 246, 0.8); 
+            border-top: 1px solid rgba(10, 97, 144, 0.1);
+            backdrop-filter: blur(8px);
         }
             .stop-btn:hover { background-color: #D43300 !important; }
             /* Rich text styling for prettier responses */
@@ -98,7 +102,21 @@ async def get_ui():
             .rich-text li { margin: 0.25rem 0; }
             .rich-text blockquote { border-left: 4px solid #93c5fd; padding-left: 0.75rem; color: #374151; background: #f8fafc; border-radius: 0.25rem; }
             .rich-text code { background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-            .rich-text pre { background: #0b2533; color: #e5e7eb; padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; }
+            .rich-text pre { 
+                background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); 
+                color: #334155; 
+                padding: 1rem; 
+                border-radius: 0.75rem; 
+                overflow-x: auto; 
+                border: 2px solid rgba(106, 130, 255, 0.1);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+                backdrop-filter: blur(10px);
+            }
+            .rich-text pre code {
+                background: transparent;
+                padding: 0;
+                color: inherit;
+            }
             .rich-text table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; }
             .rich-text th, .rich-text td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; text-align: left; }
             .rich-text th { background: #f3f4f6; font-weight: 600; }
@@ -511,24 +529,24 @@ async def get_ui():
                 if (!reasoning || !Array.isArray(reasoning)) return '';
                 return reasoning.map((step, index) => {
                     let stepHtml = `
-                        <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-l-4 border-blue-400 shadow-sm">
+                        <div class="mb-4 p-4 rounded-xl border border-gray-100 shadow-sm" style="background: linear-gradient(135deg, rgba(252, 249, 246, 0.6) 0%, rgba(255, 255, 255, 0.8) 100%); border-left: 4px solid #0A6190;">
                             <div class="flex items-center justify-between mb-3">
-                                <div class="font-bold text-blue-800 text-lg">
+                                <div class="font-bold text-lg" style="color: #0A6190;">
                                     Step ${index + 1}: ${step.description || step.step}
                                 </div>
-                                ${step.intelligence_level ? `<span class="px-3 py-1 bg-blue-200 text-blue-800 rounded-full text-xs font-semibold">${step.intelligence_level}</span>` : ''}
+                                ${step.intelligence_level ? `<span class="px-3 py-1 rounded-full text-xs font-semibold" style="background: rgba(252, 249, 246, 0.9); color: #0A6190; border: 1px solid rgba(10, 97, 144, 0.2);">${step.intelligence_level}</span>` : ''}
                             </div>
                     `;
                     
                     // Tool execution details
                     if (step.tool_name) {
-                        stepHtml += `<div class="text-sm text-blue-600 mb-2">🔧 Tool: ${step.tool_name}</div>`;
+                        stepHtml += `<div class="text-sm mb-2" style="color: #0A6190;">🔧 Tool: ${step.tool_name}</div>`;
                     }
                     if (step.result_count !== undefined) {
-                        stepHtml += `<div class="text-sm text-blue-600 mb-2">📊 Results: ${step.result_count} items</div>`;
+                        stepHtml += `<div class="text-sm mb-2" style="color: #0A6190;">📊 Results: ${step.result_count} items</div>`;
                     }
                     if (step.category) {
-                        stepHtml += `<div class="text-sm text-blue-600 mb-2">🏷️ Category: ${step.category}</div>`;
+                        stepHtml += `<div class="text-sm mb-2" style="color: #0A6190;">🏷️ Category: ${step.category}</div>`;
                     }
                     if (step.db_metrics) {
                         const m = step.db_metrics;
@@ -536,33 +554,33 @@ async def get_ui():
                         const rows = (m && m.rows != null) ? m.rows : '?';
                         const avail = (m && m.available_after_ms != null) ? m.available_after_ms : '?';
                         const consumed = (m && m.consumed_after_ms != null) ? m.consumed_after_ms : '?';
-                        stepHtml += `<div class="text-xs text-gray-600 mb-2">⏱️ Query Metrics: latency ${latency} ms, rows ${rows}, avail ${avail} ms, consumed ${consumed} ms</div>`;
+                        stepHtml += `<div class="text-xs mb-2" style="color: #6B7280;">⏱️ Query Metrics: latency ${latency} ms, rows ${rows}, avail ${avail} ms, consumed ${consumed} ms</div>`;
                     }
                     
                     // Understanding and reasoning
                     if (step.understanding) {
-                        stepHtml += `<div class="text-sm text-gray-700 mb-2"><strong>Understanding:</strong> ${step.understanding}</div>`;
+                        stepHtml += `<div class="text-sm mb-2" style="color: #374151;"><strong style="color: #0A6190;">Understanding:</strong> ${step.understanding}</div>`;
                     }
                     if (step.reasoning) {
-                        stepHtml += `<div class="text-sm text-gray-700 mb-2"><strong>Reasoning:</strong> ${step.reasoning}</div>`;
+                        stepHtml += `<div class="text-sm mb-2" style="color: #374151;"><strong style="color: #0A6190;">Reasoning:</strong> ${step.reasoning}</div>`;
                     }
                     if (step.llm_analysis) {
-                        stepHtml += `<div class="text-sm text-gray-700 mb-2"><strong>LLM Analysis:</strong> ${step.llm_analysis}</div>`;
+                        stepHtml += `<div class="text-sm mb-2" style="color: #374151;"><strong style="color: #0A6190;">LLM Analysis:</strong> ${step.llm_analysis}</div>`;
                     }
                     
                     // LLM Reasoning Details (for query understanding and response generation)
                     if (step.llm_reasoning_details || step.llm_reasoning) {
                         const llmDetails = step.llm_reasoning_details || step.llm_reasoning;
                         stepHtml += `
-                            <details class="mt-3 bg-white rounded-lg border border-blue-200">
-                                <summary class="cursor-pointer font-semibold text-blue-700 p-3 flex items-center space-x-2 hover:bg-blue-50 rounded-t-lg transition-colors">
+                            <details class="mt-3 rounded-lg border" style="background: rgba(255, 255, 255, 0.8); border-color: rgba(10, 97, 144, 0.2);">
+                                <summary class="cursor-pointer font-semibold p-3 flex items-center space-x-2 rounded-t-lg transition-colors" style="color: #0A6190;" onmouseover="this.style.background='rgba(252, 249, 246, 0.5)'" onmouseout="this.style.background='transparent'">
                                     <span>🤖</span>
                                     <span>LLM Reasoning Details</span>
-                                    <span class="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs">
+                                    <span class="px-2 py-1 rounded-full text-xs" style="background: rgba(252, 249, 246, 0.9); color: #0A6190; border: 1px solid rgba(10, 97, 144, 0.2);">
                                         ${llmDetails.intelligence_level || 'LLM-powered'}
                                     </span>
                                 </summary>
-                                <div class="p-3 border-t border-blue-200 space-y-3">
+                                <div class="p-3 space-y-3" style="border-top: 1px solid rgba(10, 97, 144, 0.2);">
                                     ${llmDetails.llm_model ? `<div class="text-sm"><strong>Model:</strong> ${llmDetails.llm_model}</div>` : ''}
                                     ${llmDetails.temperature ? `<div class="text-sm"><strong>Temperature:</strong> ${llmDetails.temperature}</div>` : ''}
                                     ${llmDetails.max_tokens ? `<div class="text-sm"><strong>Max Tokens:</strong> ${llmDetails.max_tokens}</div>` : ''}
@@ -743,24 +761,12 @@ async def get_ui():
                                                             )}
                                                             {group.answer && (
                                                                 <div className="">
-                                                                    <div className="flex items-center justify-between mb-2">
-                                                                        <div className="flex items-center">
-                                                                            <span className="text-2xl mr-3 text-green-600">🤖</span>
-                                                                            <span className="font-bold text-lg text-gray-700">Agent</span>
-                                                                        </div>
-                                                                        <div className="flex items-center space-x-2">
-                                                                            {group.answer.hasError && (
-                                                                                <span className="text-red-500 text-sm">⚠️ Error occurred</span>
-                                                                            )}
-                                                                            <button
-                                                                                onClick={() => retryQuery(group.question ? group.question.content : '')}
-                                                                                disabled={loading || isStreaming}
-                                                                                className="px-3 py-1 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                                                                                title="Retry this question"
-                                                                            >
-                                                                                🔄 Retry
-                                                                            </button>
-                                                                        </div>
+                                                                    <div className="flex items-center mb-2">
+                                                                        <span className="text-2xl mr-3 text-green-600">🤖</span>
+                                                                        <span className="font-bold text-lg text-gray-700">Agent</span>
+                                                                        {group.answer.hasError && (
+                                                                            <span className="text-red-500 text-sm ml-3">⚠️ Error occurred</span>
+                                                                        )}
                                                                     </div>
                                                                     {group.answer.reasoning && (
                                                                         <div className="mb-4 rounded-xl border-2 neo4j-reasoning-card">
@@ -784,6 +790,16 @@ async def get_ui():
                                                                         </div>
                                                                     )}
                                                                     <div className="rich-text leading-relaxed" dangerouslySetInnerHTML={{ __html: formatResponse(group.answer.content) }} />
+                                                                    <div className="flex justify-end mt-4">
+                                                                        <button
+                                                                            onClick={() => retryQuery(group.question ? group.question.content : '')}
+                                                                            disabled={loading || isStreaming}
+                                                                            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
+                                                                            title="Retry this question"
+                                                                        >
+                                                                            🔄 Retry Question
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             )}
                                                         </div>
