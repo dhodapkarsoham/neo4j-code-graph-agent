@@ -123,6 +123,24 @@ async def get_ui():
         .quality-badge { background: linear-gradient(135deg, #20B2AA 0%, #008B8B 100%); }
         .custom-badge { background: linear-gradient(135deg, #808080 0%, #696969 100%); }
         .glass-effect { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.9); }
+
+        /* Status chip system - consistent sizing and palette */
+        :root {
+            --status-dot-ok: #22c55e;      /* green-500 */
+            --status-dot-error: #ef4444;   /* red-500 */
+            --status-dot-warn: #f59e0b;    /* amber-500 */
+        }
+        .status-chip {
+            display: inline-flex; align-items: center; justify-content: center;
+            height: 1.75rem; /* h-7 */
+            min-width: 72px; padding: 0 0.625rem; /* px-2.5 */
+            border-radius: 0.375rem; /* rounded-md */
+            gap: 0.5rem; /* space-x-2 */
+        }
+        .status-dot { width: 0.75rem; height: 0.75rem; border-radius: 9999px; }
+        .status-ok { background: var(--status-dot-ok); }
+        .status-error { background: var(--status-dot-error); }
+        .status-warn { background: var(--status-dot-warn); }
         
         /* Beautiful Agent Reasoning - Neo4j Cohesive Design */
         .neo4j-reasoning-card { 
@@ -257,6 +275,9 @@ async def get_ui():
             const [checking, setChecking] = useState(false);
             const [neo4jMeta, setNeo4jMeta] = useState({ uri: '', database: '' });
             const [showDbTip, setShowDbTip] = useState(false);
+            const [llmStatus, setLlmStatus] = useState(null); // true/false/null
+            const [llmMeta, setLlmMeta] = useState({ last_success_at: null, last_error_at: null });
+            const [showLlmTip, setShowLlmTip] = useState(false);
             const loadHealth = async () => {
                 try {
                     setChecking(true);
@@ -268,6 +289,15 @@ async def get_ui():
                     const data = await response.json();
                     setNeo4jStatus(data.neo4j?.connected === true);
                     setNeo4jMeta({ uri: data.neo4j?.uri || '', database: data.neo4j?.database || '' });
+                    // LLM status: green if configured and last_success_at present; red if configured false or last_error
+                    const ls = data.llm || {};
+                    let llmOk = null;
+                    if (ls.initial_check_done) {
+                        if (ls.configured && ls.last_success_at && !ls.last_error_at) llmOk = true;
+                        else if (!ls.configured || ls.last_error_at) llmOk = false;
+                    }
+                    setLlmStatus(llmOk);
+                    setLlmMeta({ last_success_at: ls.last_success_at || null, last_error_at: ls.last_error_at || null });
                     clearTimeout(id);
                 } catch (e) {
                     setNeo4jStatus(false);
@@ -841,13 +871,13 @@ async def get_ui():
                                 </div>
                                 {/* Compact status cluster */}
                                 <div className="text-right">
-                                    <div className="flex items-center space-x-3">
+                                    <div className="flex items-center flex-wrap gap-y-1 space-x-2 md:space-x-3">
                                         <div className="relative inline-block"
                                              onMouseEnter={() => setShowDbTip(true)}
                                              onMouseLeave={() => setShowDbTip(false)}
                                         >
                                             <div
-                                                className="flex items-center space-x-2 text-sm px-2.5 py-1 rounded-md bg-white/80 border border-gray-300 shadow-sm"
+                                                className={`status-chip glass-effect border ${neo4jStatus ? 'border-gray-200 shadow-none' : 'border-gray-300 shadow-sm'}`}
                                                 role="status"
                                                 aria-live="polite"
                                                 aria-label={`Neo4j database ${neo4jStatus===null? 'checking' : neo4jStatus? 'connected' : 'offline'}${neo4jMeta.uri? ' at ' + neo4jMeta.uri : ''}${neo4jMeta.database? ' (' + neo4jMeta.database + ')' : ''}`}
@@ -855,20 +885,14 @@ async def get_ui():
                                                 onBlur={() => setShowDbTip(false)}
                                                 tabIndex="0"
                                             >
-                                                <span className={`inline-block h-3 w-3 rounded-full ${checking ? 'bg-amber-500 animate-pulse' : (neo4jStatus ? 'bg-green-500' : 'bg-red-500')}`}></span>
-                                                <span aria-hidden="true">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`h-4 w-4 ${neo4jStatus ? 'text-gray-700' : 'text-red-600'}`}>
-                                                        <ellipse cx="12" cy="5" rx="7" ry="3"></ellipse>
-                                                        <path d="M5 5v6c0 1.66 3.13 3 7 3s7-1.34 7-3V5"></path>
-                                                        <path d="M5 11v6c0 1.66 3.13 3 7 3s7-1.34 7-3v-6"></path>
-                                                    </svg>
-                                                </span>
+                                                <span className={`status-dot ${checking ? 'status-warn animate-pulse' : (neo4jStatus ? 'status-ok' : 'status-error')}`}></span>
+                                                <span className="text-gray-700 text-[11px] font-semibold" aria-hidden="true">DB</span>
                                             </div>
                                             {showDbTip && (
                                                 <div className="absolute right-0 mt-2 z-50">
                                                     <div className="absolute -top-1.5 right-3 h-3 w-3 bg-white border border-gray-300 rotate-45"></div>
                                                     <div className="relative bg-white text-gray-800 text-xs border border-gray-300 rounded-md shadow-md px-3 py-2 leading-5 min-w-[240px] max-w-[420px]">
-                                                        <div className="mb-1 font-medium">{`${neo4jStatus===null? 'Checking…' : neo4jStatus? 'Connected' : 'Offline'}`}</div>
+                                                        <div className="mb-1 font-medium">{`${neo4jStatus===null? 'Checking…' : neo4jStatus? 'Connected' : 'Unavailable'}`}</div>
                                                         <code className="block font-mono text-[11px] text-gray-700 truncate" title={`${neo4jMeta.uri || ''}${neo4jMeta.database ? ' • ' + neo4jMeta.database : ''}`}>
                                                             {`${neo4jMeta.uri || ''}${neo4jMeta.database ? ' • ' + neo4jMeta.database : ''}`}
                                                         </code>
@@ -876,6 +900,41 @@ async def get_ui():
                                                 </div>
                                             )}
                                         </div>
+                                        {/* LLM status chip (hidden until initial check completes) */}
+                                        {llmStatus !== null && (
+                                            <div 
+                                                className="relative inline-block"
+                                                onMouseEnter={() => setShowLlmTip(true)}
+                                                onMouseLeave={() => setShowLlmTip(false)}
+                                                onFocus={() => setShowLlmTip(true)}
+                                                onBlur={() => setShowLlmTip(false)}
+                                                tabIndex="0"
+                                            >
+                                                <div
+                                                    className={`status-chip glass-effect border ${llmStatus ? 'border-gray-200 shadow-none' : 'border-gray-300 shadow-sm'}`}
+                                                    role="status"
+                                                    aria-live="polite"
+                                                    aria-label={`LLM ${llmStatus===true? 'connected' : 'unavailable'}`}
+                                                >
+                                                    <span className={`status-dot ${llmStatus? 'status-ok' : 'status-error'}`}></span>
+                                                    <span className="text-gray-700 text-[11px] font-semibold" aria-hidden="true">LLM</span>
+                                                </div>
+                                                {showLlmTip && (
+                                                    <div className="absolute right-0 mt-2 z-50">
+                                                        <div className="absolute -top-1.5 right-3 h-3 w-3 bg-white border border-gray-300 rotate-45"></div>
+                                                        <div className="relative bg-white text-gray-800 text-xs border border-gray-300 rounded-md shadow-md px-3 py-2 leading-5 min-w-[220px]">
+                                                            <div className="mb-1 font-medium">{llmStatus? 'Connected' : 'Unavailable'}</div>
+                                                            {llmStatus && llmMeta.last_success_at && (
+                                                                <div className="text-[11px] text-gray-600">Last success: {new Date(llmMeta.last_success_at).toLocaleString()}</div>
+                                                            )}
+                                                            {!llmStatus && llmMeta.last_error_at && (
+                                                                <div className="text-[11px] text-gray-600">Last error: {new Date(llmMeta.last_error_at).toLocaleString()}</div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1373,7 +1432,8 @@ async def health_check():
             "connected": bool(neo4j_ok),
             "uri": settings.neo4j_uri,
             "database": settings.neo4j_database,
-        }
+        },
+        "llm": getattr(agent, "llm_client", None) and getattr(agent.llm_client, "status", None) or getattr(__import__("src.llm", fromlist=["llm_client"]).llm_client, "status", {})
     }
 
 @app.get("/api/tools")

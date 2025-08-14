@@ -2,6 +2,7 @@
 
 import logging
 from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
 from openai import AzureOpenAI
 from src.config import settings
 import re
@@ -17,6 +18,14 @@ class AzureOpenAIClient:
         """Initialize Azure OpenAI client."""
         self.client = None
         self.last_metrics: Optional[Dict[str, Any]] = None
+        # Lightweight status tracking for health endpoint and UI
+        self.status: Dict[str, Any] = {
+            "configured": False,
+            "initial_check_done": False,
+            "last_success_at": None,
+            "last_error_at": None,
+            "last_error_message": None,
+        }
         self._initialize_client()
     
     def _initialize_client(self):
@@ -31,6 +40,13 @@ class AzureOpenAIClient:
             settings.azure_openai_deployment_name
         ]):
             logger.warning("Azure OpenAI configuration incomplete")
+            # Mark as not configured for health reporting
+            self.status.update({
+                "configured": False,
+                "initial_check_done": True,
+                "last_error_message": "Azure OpenAI configuration incomplete",
+                "last_error_at": datetime.now(timezone.utc).isoformat(),
+            })
             return
         
         try:
@@ -40,9 +56,37 @@ class AzureOpenAIClient:
                 azure_endpoint=settings.azure_openai_endpoint
             )
             logger.info("✅ Azure OpenAI client initialized")
+            self.status.update({"configured": True})
+            # One-time minimal connectivity probe (binary: green/red)
+            try:
+                _ = self.client.chat.completions.create(
+                    model=settings.azure_openai_deployment_name,
+                    messages=[{"role": "user", "content": "ping"}],
+                    temperature=0,
+                    max_tokens=1,
+                )
+                self.status.update({
+                    "last_success_at": datetime.now(timezone.utc).isoformat(),
+                    "initial_check_done": True,
+                    "last_error_message": None,
+                    "last_error_at": None,
+                })
+            except Exception as ping_err:
+                logger.warning(f"Azure OpenAI initial ping failed: {ping_err}")
+                self.status.update({
+                    "initial_check_done": True,
+                    "last_error_message": str(ping_err),
+                    "last_error_at": datetime.now(timezone.utc).isoformat(),
+                })
         except Exception as e:
             logger.error(f"❌ Failed to initialize Azure OpenAI client: {e}")
             self.client = None
+            self.status.update({
+                "configured": False,
+                "initial_check_done": True,
+                "last_error_message": str(e),
+                "last_error_at": datetime.now(timezone.utc).isoformat(),
+            })
     
     def is_configured(self) -> bool:
         """Check if the client is properly configured."""
@@ -73,6 +117,12 @@ class AzureOpenAIClient:
                 temperature=temperature,
                 max_tokens=max_tokens
             )
+            # Mark success for health reporting
+            self.status.update({
+                "last_success_at": datetime.now(timezone.utc).isoformat(),
+                "last_error_message": None,
+                "last_error_at": None,
+            })
             latency_ms = (time.perf_counter() - start_time) * 1000.0
             # Extract usage if available
             prompt_tokens = None
@@ -110,6 +160,11 @@ class AzureOpenAIClient:
         
         except Exception as e:
             logger.error(f"Error generating response: {e}")
+            # Mark error for health reporting
+            self.status.update({
+                "last_error_message": str(e),
+                "last_error_at": datetime.now(timezone.utc).isoformat(),
+            })
             raise
 
     # Cost estimation intentionally removed to avoid confusion; keep tokens and latency only
