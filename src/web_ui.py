@@ -9,6 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.agent import agent
 from src.mcp_tools import tool_registry
+from src.database import db
+from src.config import settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -180,6 +182,33 @@ async def get_ui():
                     console.error('Error loading tools:', error);
                 }
             };
+
+            const [neo4jStatus, setNeo4jStatus] = useState(null);
+            const [checking, setChecking] = useState(false);
+            const [neo4jMeta, setNeo4jMeta] = useState({ uri: '', database: '' });
+            const [showDbTip, setShowDbTip] = useState(false);
+            const loadHealth = async () => {
+                try {
+                    setChecking(true);
+                    const controller = new AbortController();
+                    const id = setTimeout(() => controller.abort(), 3000);
+                    // jitter to avoid sync storms
+                    await new Promise(r => setTimeout(r, Math.random()*500));
+                    const response = await fetch('/api/health', { signal: controller.signal });
+                    const data = await response.json();
+                    setNeo4jStatus(data.neo4j?.connected === true);
+                    setNeo4jMeta({ uri: data.neo4j?.uri || '', database: data.neo4j?.database || '' });
+                    clearTimeout(id);
+                } catch (e) {
+                    setNeo4jStatus(false);
+                } finally {
+                    setChecking(false);
+                }
+            };
+            // Initial check
+            useEffect(() => { loadHealth(); }, []);
+            // Adaptive polling: faster when offline, slower when healthy
+            useEffect(() => { const ms = neo4jStatus === true ? 15000 : 3000; const id = setInterval(loadHealth, ms); return () => clearInterval(id); }, [neo4jStatus]);
 
             const clearChat = () => {
                 setMessages([]);
@@ -678,17 +707,75 @@ async def get_ui():
                     {/* Header */}
                     <div className="neo4j-primary text-white p-12 shadow-lg">
                         <div className="container mx-auto">
-                            <h1 className="text-5xl font-bold mb-4">Code Graph Agent</h1>
-                            <div className="flex items-center space-x-3 text-xl opacity-90">
-                                <span>Powered by</span>
-                                <img 
-                                    src="/assets/images/logo-white-RGB-transBG.png" 
-                                    alt="Neo4j" 
-                                    className="h-8 w-auto"
-                                />
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h1 className="text-5xl font-bold mb-2">Code Graph Agent</h1>
+                                    <p className="text-xl opacity-90">Powered by Neo4j</p>
+                                </div>
+                                {/* Compact status cluster */}
+                                <div className="text-right">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="relative inline-block"
+                                             onMouseEnter={() => setShowDbTip(true)}
+                                             onMouseLeave={() => setShowDbTip(false)}
+                                        >
+                                            <div
+                                                className="flex items-center space-x-2 text-sm px-2.5 py-1 rounded-md bg-white/80 border border-gray-300 shadow-sm"
+                                                role="status"
+                                                aria-live="polite"
+                                                aria-label={`Neo4j database ${neo4jStatus===null? 'checking' : neo4jStatus? 'connected' : 'offline'}${neo4jMeta.uri? ' at ' + neo4jMeta.uri : ''}${neo4jMeta.database? ' (' + neo4jMeta.database + ')' : ''}`}
+                                                onFocus={() => setShowDbTip(true)}
+                                                onBlur={() => setShowDbTip(false)}
+                                                tabIndex="0"
+                                            >
+                                                <span className={`inline-block h-3 w-3 rounded-full ${checking ? 'bg-amber-500 animate-pulse' : (neo4jStatus ? 'bg-green-500' : 'bg-red-500')}`}></span>
+                                                <span aria-hidden="true">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`h-4 w-4 ${neo4jStatus ? 'text-gray-700' : 'text-red-600'}`}>
+                                                        <ellipse cx="12" cy="5" rx="7" ry="3"></ellipse>
+                                                        <path d="M5 5v6c0 1.66 3.13 3 7 3s7-1.34 7-3V5"></path>
+                                                        <path d="M5 11v6c0 1.66 3.13 3 7 3s7-1.34 7-3v-6"></path>
+                                                    </svg>
+                                                </span>
+                                            </div>
+                                            {showDbTip && (
+                                                <div className="absolute right-0 mt-2 z-50">
+                                                    <div className="absolute -top-1.5 right-3 h-3 w-3 bg-white border border-gray-300 rotate-45"></div>
+                                                    <div className="relative bg-white text-gray-800 text-xs border border-gray-300 rounded-md shadow-md px-3 py-2 leading-5 min-w-[240px] max-w-[420px]">
+                                                        <div className="mb-1 font-medium">{`${neo4jStatus===null? 'Checking…' : neo4jStatus? 'Connected' : 'Offline'}`}</div>
+                                                        <code className="block font-mono text-[11px] text-gray-700 truncate" title={`${neo4jMeta.uri || ''}${neo4jMeta.database ? ' • ' + neo4jMeta.database : ''}`}>
+                                                            {`${neo4jMeta.uri || ''}${neo4jMeta.database ? ' • ' + neo4jMeta.database : ''}`}
+                                                        </code>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    {/* Slim offline banner */}
+                    {neo4jStatus === false && (
+                        <div className="w-full bg-red-50 text-red-700 text-sm border-b border-red-200 transition-opacity duration-200 ease-out">
+                            <div className="container mx-auto px-4 py-2 flex items-center justify-between">
+                                <div className="flex items-center">
+                                    <span className="mr-2">⚠️</span>
+                                    <span className="font-medium">Database offline.</span>
+                                    <span className="ml-2 opacity-80 hidden sm:inline">Check settings or retry.</span>
+                                </div>
+                                <button
+                                    onClick={loadHealth}
+                                    disabled={checking}
+                                    aria-label="Retry health check"
+                                    className="inline-flex items-center text-sm px-3 py-1.5 rounded-lg border border-red-200 bg-white/90 text-red-700 hover:bg-red-100 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+                                >
+                                    <span className={`${checking ? 'animate-spin' : ''}`}>⟲</span>
+                                    <span className="ml-2 font-medium">Retry</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Navigation Tabs */}
                     <div className="container mx-auto px-6 py-8">
@@ -1121,7 +1208,19 @@ async def get_ui():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "message": "Code Graph Agent is running"}
+    try:
+        neo4j_ok = db.test_connection()
+    except Exception:
+        neo4j_ok = False
+    return {
+        "status": "healthy",
+        "message": "MCP Code Graph Agent is running",
+        "neo4j": {
+            "connected": bool(neo4j_ok),
+            "uri": settings.neo4j_uri,
+            "database": settings.neo4j_database,
+        }
+    }
 
 @app.get("/api/tools")
 async def list_tools():

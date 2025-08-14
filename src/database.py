@@ -1,6 +1,7 @@
 """Neo4j database connection and query management."""
 
 import logging
+import threading
 from typing import Dict, List, Any, Optional
 from neo4j import GraphDatabase
 from src.config import settings
@@ -16,22 +17,29 @@ class Neo4jDatabase:
         """Initialize database connection."""
         self.driver = None
         self.last_metrics: Optional[Dict[str, Any]] = None
+        self._lock = threading.Lock()
         self._connect()
     
     def _connect(self):
         """Establish connection to Neo4j."""
-        try:
-            self.driver = GraphDatabase.driver(
-                settings.neo4j_uri,
-                auth=(settings.neo4j_user, settings.neo4j_password)
-            )
-            # Test connection
-            with self.driver.session(database=settings.neo4j_database) as session:
-                session.run("RETURN 1")
-            logger.info("✅ Connected to Neo4j database")
-        except Exception as e:
-            logger.error("❌ Failed to connect to Neo4j: Connection error occurred")
-            self.driver = None
+        with self._lock:
+            try:
+                self.driver = GraphDatabase.driver(
+                    settings.neo4j_uri,
+                    auth=(settings.neo4j_user, settings.neo4j_password)
+                )
+                # Test connection
+                with self.driver.session(database=settings.neo4j_database) as session:
+                    session.run("RETURN 1")
+                logger.info("✅ Connected to Neo4j database")
+            except Exception as e:
+                logger.error("❌ Failed to connect to Neo4j: %s", str(e))
+                try:
+                    if self.driver:
+                        self.driver.close()
+                except Exception:
+                    pass
+                self.driver = None
     
     def execute_query(self, query: str, parameters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """Execute a Cypher query and return results."""
@@ -73,12 +81,27 @@ class Neo4jDatabase:
             raise
     
     def test_connection(self) -> bool:
-        """Test database connection."""
+        """Test database connection. Attempts lazy reconnect if not connected."""
+        # Attempt reconnect if driver is missing
+        if self.driver is None:
+            try:
+                self._connect()
+            except Exception as e:
+                logger.debug("Reconnect attempt failed: %s", str(e))
         try:
+            if self.driver is None:
+                return False
             with self.driver.session(database=settings.neo4j_database) as session:
                 result = session.run("RETURN 1 as test")
                 return result.single()["test"] == 1
         except Exception:
+            # On failure, mark driver unusable to allow future reconnects
+            try:
+                if self.driver:
+                    self.driver.close()
+            except Exception:
+                pass
+            self.driver = None
             return False
     
     def get_schema_info(self) -> Dict[str, Any]:
