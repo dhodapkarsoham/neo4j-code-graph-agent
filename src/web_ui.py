@@ -708,7 +708,7 @@ async def get_ui():
                         {activeTab === 'tools' && (
                             <div className="space-y-8">
                                 {/* Statistics Dashboard */}
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
                                     <div className="glass-effect p-6 rounded-2xl shadow-lg text-center">
                                         <div className="text-3xl font-bold text-blue-600">{tools.length}</div>
                                         <div className="text-base text-gray-600">Total Tools</div>
@@ -724,6 +724,10 @@ async def get_ui():
                                     <div className="glass-effect p-6 rounded-2xl shadow-lg text-center">
                                         <div className="text-3xl font-bold text-orange-600">{getToolsByCategory('Team').length}</div>
                                         <div className="text-base text-gray-600">Team Tools</div>
+                                    </div>
+                                    <div className="glass-effect p-6 rounded-2xl shadow-lg text-center">
+                                        <div className="text-3xl font-bold text-gray-600">{getToolsByCategory('Custom').length}</div>
+                                        <div className="text-base text-gray-600">Custom Tools</div>
                                     </div>
                                 </div>
 
