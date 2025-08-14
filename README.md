@@ -51,7 +51,7 @@ Neo4j Code Graph Agent (this repo) is an intelligent agentic AI system that anal
 - Python 3.8+
 - Neo4j Database (local or cloud)
 - Azure OpenAI Service
-- Modern web browser
+- Web browser for testing UI (tested on Firefox, Safari, Arc, Comet)
 
 ## 🛠️ Installation
 
