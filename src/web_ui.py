@@ -59,6 +59,32 @@ async def get_ui():
         .quality-badge { background: linear-gradient(135deg, #20B2AA 0%, #008B8B 100%); }
         .custom-badge { background: linear-gradient(135deg, #808080 0%, #696969 100%); }
         .glass-effect { backdrop-filter: blur(10px); background: rgba(255, 255, 255, 0.9); }
+        
+        /* Neo4j Brand Colors for Agent Reasoning */
+        .neo4j-reasoning-card { 
+            background: linear-gradient(135deg, #FCF9F6 0%, #FEFCF9 100%); 
+            border-color: #008CC1; 
+            box-shadow: 0 4px 12px rgba(0, 140, 193, 0.1);
+        }
+        .neo4j-reasoning-header { 
+            background: linear-gradient(135deg, rgba(0, 140, 193, 0.1) 0%, rgba(10, 97, 144, 0.15) 100%);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 140, 193, 0.2);
+            color: #0A6190; 
+        }
+        .neo4j-reasoning-header:hover { 
+            background: linear-gradient(135deg, rgba(0, 140, 193, 0.15) 0%, rgba(10, 97, 144, 0.2) 100%);
+            border: 1px solid rgba(0, 140, 193, 0.3);
+        }
+        .neo4j-reasoning-badge { 
+            background: #F2EAD4; 
+            color: #0A6190; 
+            border: 1px solid #008CC1;
+        }
+        .neo4j-reasoning-content { 
+            background: #FCF9F6; 
+            border-top: 2px solid #F2EAD4;
+        }
             .stop-btn:hover { background-color: #D43300 !important; }
             /* Rich text styling for prettier responses */
             .rich-text { color: #1f2937; line-height: 1.7; }
@@ -89,6 +115,7 @@ async def get_ui():
             const [query, setQuery] = useState('');
             const [messages, setMessages] = useState([]);
             const [collapsedGroups, setCollapsedGroups] = useState({});
+            const [collapsedReasoning, setCollapsedReasoning] = useState({});
             const [loading, setLoading] = useState(false);
             const [tools, setTools] = useState([]);
             const [showCreateTool, setShowCreateTool] = useState(false);
@@ -124,6 +151,14 @@ async def get_ui():
             const clearChat = () => {
                 setMessages([]);
                 setCollapsedGroups({});
+                setCollapsedReasoning({});
+            };
+
+            const toggleReasoning = (groupId) => {
+                setCollapsedReasoning(prev => ({
+                    ...prev,
+                    [groupId]: !prev[groupId]
+                }));
             };
 
             const retryQuery = async (originalQuery) => {
@@ -728,16 +763,25 @@ async def get_ui():
                                                                         </div>
                                                                     </div>
                                                                     {group.answer.reasoning && (
-                                                                        <details className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
-                                                                            <summary className="cursor-pointer font-semibold text-blue-800 p-3 flex items-center space-x-2 hover:bg-blue-100 rounded-t-xl transition-colors">
+                                                                        <div className="mb-4 rounded-xl border-2 neo4j-reasoning-card">
+                                                                            <div 
+                                                                                className="cursor-pointer font-semibold p-3 flex items-center space-x-2 rounded-t-xl transition-all duration-200 neo4j-reasoning-header"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    toggleReasoning(groupId);
+                                                                                }}
+                                                                            >
+                                                                                <span className="transition-transform duration-200" style={{transform: collapsedReasoning[groupId] ? 'rotate(0deg)' : 'rotate(90deg)'}}>▶</span>
                                                                                 <span>🤔</span>
                                                                                 <span>Agent Reasoning Process</span>
-                                                                                <span className="bg-blue-200 text-blue-800 px-2 py-1 rounded-full text-xs">{group.answer.reasoning.length} steps</span>
-                                                                            </summary>
-                                                                            <div className="p-3 border-t border-blue-200">
-                                                                                <div className="space-y-2" dangerouslySetInnerHTML={{ __html: formatReasoning(group.answer.reasoning) }} />
+                                                                                <span className="neo4j-reasoning-badge px-2 py-1 rounded-full text-xs font-medium">{group.answer.reasoning.length} steps</span>
                                                                             </div>
-                                                                        </details>
+                                                                            {!collapsedReasoning[groupId] && (
+                                                                                <div className="p-3 neo4j-reasoning-content">
+                                                                                    <div className="space-y-2" dangerouslySetInnerHTML={{ __html: formatReasoning(group.answer.reasoning) }} />
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     )}
                                                                     <div className="rich-text leading-relaxed" dangerouslySetInnerHTML={{ __html: formatResponse(group.answer.content) }} />
                                                                 </div>
