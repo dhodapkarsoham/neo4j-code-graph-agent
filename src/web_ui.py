@@ -66,6 +66,53 @@ async def get_ui():
             box-shadow: 0 6px 20px rgba(10, 97, 144, 0.3);
             transform: translateY(-2px);
         }
+        .notification-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .notification {
+            pointer-events: auto;
+            min-width: 320px;
+            max-width: 500px;
+            padding: 16px 20px;
+            border-radius: 16px;
+            backdrop-filter: blur(16px);
+            border: 2px solid;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            animation: slideInNotification 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            font-family: 'Public Sans', sans-serif;
+        }
+        .notification-success {
+            background: linear-gradient(135deg, rgba(240, 253, 244, 0.95), rgba(236, 252, 240, 0.98));
+            border-color: rgba(144, 203, 98, 0.3);
+            color: #22543d;
+            box-shadow: 0 8px 32px rgba(144, 203, 98, 0.1);
+        }
+        .notification-error {
+            background: linear-gradient(135deg, rgba(254, 242, 242, 0.95), rgba(252, 237, 237, 0.98));
+            border-color: rgba(255, 111, 97, 0.3);
+            color: #742a2a;
+            box-shadow: 0 8px 32px rgba(255, 111, 97, 0.1);
+        }
+        .notification-info {
+            background: linear-gradient(135deg, rgba(240, 249, 255, 0.95), rgba(235, 248, 255, 0.98));
+            border-color: rgba(10, 97, 144, 0.3);
+            color: #1e3a8a;
+            box-shadow: 0 8px 32px rgba(10, 97, 144, 0.1);
+        }
+        @keyframes slideInNotification {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
         .tab-active { background: linear-gradient(135deg, #0A6190 0%, #0A6190 100%); color: white; }
         .tab-inactive { background: #FCF9F6; color: #4A4A4A; }
         .tool-card { background: #FCF9F6; border: 1px solid #90CB62; }
@@ -153,7 +200,9 @@ async def get_ui():
             const [collapsedReasoning, setCollapsedReasoning] = useState({});
             const [loading, setLoading] = useState(false);
             const [tools, setTools] = useState([]);
+            const [notification, setNotification] = useState(null);
             const [showCreateTool, setShowCreateTool] = useState(false);
+            const [validationErrors, setValidationErrors] = useState({});
             const [isStreaming, setIsStreaming] = useState(false);
             const [newTool, setNewTool] = useState({
                 name: '',
@@ -172,6 +221,27 @@ async def get_ui():
             useEffect(() => {
                 loadTools();
             }, []);
+
+            // Notification system
+            const showNotification = (message, type = 'success', duration = 4000) => {
+                setNotification({ message, type, id: Date.now() });
+                setTimeout(() => setNotification(null), duration);
+            };
+
+            // Clear validation errors when user starts typing
+            const handleNewToolChange = (field, value) => {
+                setNewTool(prev => ({ ...prev, [field]: value }));
+                if (validationErrors[field]) {
+                    setValidationErrors(prev => ({ ...prev, [field]: false }));
+                }
+            };
+
+            // Handle cancel button - clear form and validation errors
+            const handleCancelCreateTool = () => {
+                setShowCreateTool(false);
+                setValidationErrors({});
+                setNewTool({ name: '', description: '', category: 'Custom', query: '' });
+            };
 
             const loadTools = async () => {
                 try {
@@ -440,11 +510,35 @@ async def get_ui():
                     alert(`Tool test result: ${JSON.stringify(data, null, 2)}`);
                 } catch (error) {
                     console.error('Error testing tool:', error);
-                    alert('Error testing tool');
+                    showNotification(`Failed to test tool "${toolName}"`, 'error');
                 }
             };
 
             const createCustomTool = async () => {
+                // Client-side validation
+                const errors = [];
+                const fieldErrors = {};
+                
+                if (!newTool.name || !newTool.name.trim()) {
+                    errors.push('Tool Name is required');
+                    fieldErrors.name = true;
+                }
+                if (!newTool.description || !newTool.description.trim()) {
+                    errors.push('Description is required');
+                    fieldErrors.description = true;
+                }
+                if (!newTool.query || !newTool.query.trim()) {
+                    errors.push('Cypher Query is required');
+                    fieldErrors.query = true;
+                }
+                
+                setValidationErrors(fieldErrors);
+                
+                if (errors.length > 0) {
+                    showNotification(`Please fill in all required fields: ${errors.join(', ')}`, 'error', 6000);
+                    return;
+                }
+                
                 try {
                     const response = await fetch('/api/tools', {
                         method: 'POST',
@@ -455,14 +549,16 @@ async def get_ui():
                     if (response.ok) {
                         setShowCreateTool(false);
                         setNewTool({ name: '', description: '', category: 'Custom', query: '' });
+                        setValidationErrors({});
                         loadTools();
-                        alert('Tool created successfully!');
+                        showNotification(`🎉 Tool "${newTool.name}" created successfully!`, 'success');
                     } else {
-                        alert('Error creating tool');
+                        const errorData = await response.json();
+                        showNotification(`Failed to create tool: ${errorData.detail || response.statusText}`, 'error');
                     }
                 } catch (error) {
                     console.error('Error creating tool:', error);
-                    alert('Error creating tool');
+                    showNotification(`Failed to create tool: ${error.message}`, 'error');
                 }
             };
 
@@ -479,7 +575,7 @@ async def get_ui():
                     setShowToolDetails(true);
                 } catch (error) {
                     console.error('Error fetching tool details:', error);
-                    alert('Error fetching tool details');
+                    showNotification('Failed to load tool details', 'error');
                 }
             };
 
@@ -495,17 +591,17 @@ async def get_ui():
                     
                     if (response.ok) {
                         const result = await response.json();
-                        alert('Tool updated successfully!');
+                        showNotification(`🔄 Tool "${selectedTool}" updated successfully!`, 'success');
                         setShowToolDetails(false);
                         setSelectedTool(null);
                         loadTools();
                     } else {
                         const errorData = await response.json();
-                        alert(`Error updating tool: ${errorData.detail}`);
+                        showNotification(`Failed to update tool: ${errorData.detail}`, 'error');
                     }
                 } catch (error) {
                     console.error('Error updating tool:', error);
-                    alert('Error updating tool');
+                    showNotification('Failed to update tool. Please try again.', 'error');
                 }
             };
 
@@ -520,15 +616,15 @@ async def get_ui():
                     });
                     
                     if (response.ok) {
-                        alert('Tool deleted successfully!');
+                        showNotification(`🗑️ Tool "${toolName}" deleted successfully!`, 'success');
                         loadTools();
                     } else {
                         const errorData = await response.json();
-                        alert(`Error deleting tool: ${errorData.detail}`);
+                        showNotification(`Failed to delete tool: ${errorData.detail}`, 'error');
                     }
                 } catch (error) {
                     console.error('Error deleting tool:', error);
-                    alert('Error deleting tool');
+                    showNotification('Failed to delete tool. Please try again.', 'error');
                 }
             };
 
@@ -704,6 +800,30 @@ async def get_ui():
 
             return (
                 <div className="min-h-screen bg-gray-50">
+                    {/* Notification System */}
+                    {notification && (
+                        <div className="notification-container">
+                            <div className={`notification notification-${notification.type}`}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center space-x-3">
+                                        <span className="text-xl">
+                                            {notification.type === 'success' && '✅'}
+                                            {notification.type === 'error' && '❌'}
+                                            {notification.type === 'info' && 'ℹ️'}
+                                        </span>
+                                        <span className="font-semibold">{notification.message}</span>
+                                    </div>
+                                    <button
+                                        onClick={() => setNotification(null)}
+                                        className="ml-4 text-lg opacity-70 hover:opacity-100 transition-opacity"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Header */}
                     <div className="neo4j-primary text-white p-12 shadow-lg">
                         <div className="container mx-auto">
@@ -982,7 +1102,7 @@ async def get_ui():
                                 {/* Create Tool Button */}
                                 <div className="text-center">
                                     <button
-                                        onClick={() => setShowCreateTool(!showCreateTool)}
+                                        onClick={() => showCreateTool ? handleCancelCreateTool() : setShowCreateTool(true)}
                                         className="neo4j-secondary text-white px-8 py-4 rounded-2xl font-semibold text-lg transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
                                     >
                                         {showCreateTool ? '✕ Cancel' : '✨ Create New Tool'}
@@ -995,14 +1115,23 @@ async def get_ui():
                                         <h3 className="text-2xl font-bold mb-6 text-gray-800">Create Custom Tool</h3>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div>
-                                                <label className="block text-lg font-semibold mb-2 text-gray-700">Tool Name</label>
+                                                <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                    Tool Name <span className="text-red-500">*</span>
+                                                </label>
                                                 <input
                                                     type="text"
                                                     value={newTool.name}
-                                                    onChange={(e) => setNewTool({...newTool, name: e.target.value})}
-                                                    className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                    onChange={(e) => handleNewToolChange('name', e.target.value)}
+                                                    className={`w-full p-4 border-2 rounded-xl text-lg focus:outline-none transition-colors ${
+                                                        validationErrors.name 
+                                                            ? 'border-red-400 focus:border-red-500 bg-red-50' 
+                                                            : 'border-gray-200 focus:border-blue-500'
+                                                    }`}
                                                     placeholder="e.g., custom_analysis"
                                                 />
+                                                {validationErrors.name && (
+                                                    <p className="text-red-500 text-sm mt-1">Tool Name is required</p>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="block text-lg font-semibold mb-2 text-gray-700">Category</label>
@@ -1020,24 +1149,42 @@ async def get_ui():
                                             </div>
                                         </div>
                                         <div className="mt-6">
-                                            <label className="block text-lg font-semibold mb-2 text-gray-700">Description</label>
+                                            <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                Description <span className="text-red-500">*</span>
+                                            </label>
                                             <input
                                                 type="text"
                                                 value={newTool.description}
-                                                onChange={(e) => setNewTool({...newTool, description: e.target.value})}
-                                                className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                onChange={(e) => handleNewToolChange('description', e.target.value)}
+                                                className={`w-full p-4 border-2 rounded-xl text-lg focus:outline-none transition-colors ${
+                                                    validationErrors.description 
+                                                        ? 'border-red-400 focus:border-red-500 bg-red-50' 
+                                                        : 'border-gray-200 focus:border-blue-500'
+                                                }`}
                                                 placeholder="What does this tool do?"
                                             />
+                                            {validationErrors.description && (
+                                                <p className="text-red-500 text-sm mt-1">Description is required</p>
+                                            )}
                                         </div>
                                         <div className="mt-6">
-                                            <label className="block text-lg font-semibold mb-2 text-gray-700">Cypher Query</label>
+                                            <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                Cypher Query <span className="text-red-500">*</span>
+                                            </label>
                                             <textarea
                                                 value={newTool.query}
-                                                onChange={(e) => setNewTool({...newTool, query: e.target.value})}
-                                                className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                onChange={(e) => handleNewToolChange('query', e.target.value)}
+                                                className={`w-full p-4 border-2 rounded-xl text-lg focus:outline-none transition-colors ${
+                                                    validationErrors.query 
+                                                        ? 'border-red-400 focus:border-red-500 bg-red-50' 
+                                                        : 'border-gray-200 focus:border-blue-500'
+                                                }`}
                                                 rows="4"
                                                 placeholder="MATCH (n) RETURN n LIMIT 10"
                                             />
+                                            {validationErrors.query && (
+                                                <p className="text-red-500 text-sm mt-1">Cypher Query is required</p>
+                                            )}
                                         </div>
                                         <div className="mt-6 text-center">
                                             <button
@@ -1243,6 +1390,7 @@ async def create_tool(request: Request):
     """Create a new custom tool."""
     try:
         data = await request.json()
+        logger.info(f"Received tool creation request: {data}")
         
         # Validate required fields
         required_fields = ["name", "description", "category", "query"]
@@ -1268,12 +1416,17 @@ async def create_tool(request: Request):
                 "has_parameters": new_tool.parameters is not None
             }
         }
+    except HTTPException:
+        # Re-raise HTTPExceptions (like validation errors) as-is
+        raise
     except ValueError as e:
         logger.error(f"Validation error creating tool: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error creating tool: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_details = f"{str(e)} | Traceback: {traceback.format_exc()}"
+        logger.error(f"Error creating tool: {error_details}")
+        raise HTTPException(status_code=500, detail=str(e) if str(e) else "Unknown error occurred")
 
 @app.get("/api/tools/{tool_name}/test")
 async def test_tool(tool_name: str):
