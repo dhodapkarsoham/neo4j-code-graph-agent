@@ -126,14 +126,25 @@ async def get_ui():
                 setCollapsedGroups({});
             };
 
-            const sendQuery = async () => {
-                if (!query.trim()) return;
+            const retryQuery = async (originalQuery) => {
+                if (!originalQuery || !originalQuery.trim()) return;
                 
+                setQuery(originalQuery);
                 setLoading(true);
-                const userMessage = { role: 'user', content: query };
-                setMessages(prev => [...prev, userMessage]);
                 
                 try {
+                    // Same logic as sendQuery but with the original query
+                    await executeQuery(originalQuery);
+                } catch (error) {
+                    console.error('Error retrying query:', error);
+                    const errorMessage = { role: 'assistant', content: 'Sorry, there was an error retrying your request.' };
+                    setMessages(prev => [...prev, errorMessage]);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const executeQuery = async (queryText) => {
                     // Prefer WebSocket streaming if available
                     const wsUrl = (location.origin.replace('http', 'ws')) + '/ws/query';
                     const ws = new WebSocket(wsUrl);
@@ -144,161 +155,172 @@ async def get_ui():
 
                     ws.onopen = () => {
                         setIsStreaming(true);
-                        ws.send(JSON.stringify({ query }));
-                    };
-                    ws.onmessage = (event) => {
-                        try {
-                            const msg = JSON.parse(event.data);
-                            if (msg.type === 'llm_reasoning_update') {
-                                streamedReasoning.push({
-                                    step: 'query_understanding',
-                                    description: 'LLM analysis update',
-                                    understanding: msg.data.understanding,
-                                    reasoning: msg.data.reasoning,
-                                    llm_analysis: msg.data.llm_analysis,
-                                    intelligence_level: msg.data.intelligence_level,
-                                    llm_reasoning_details: msg.data.llm_reasoning_details,
-                                });
-                                // Rerender by setting state shallow copy
-                                setMessages(prev => {
-                                    const updated = [...prev];
-                                    // Add a live assistant message if not present yet
-                                    if (!updated.find(m => m.__live)) {
-                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
-                                    }
-                                    const last = updated[updated.length - 1];
-                                    last.reasoning = [...streamedReasoning];
-                                    return updated;
-                                });
-                            } else if (msg.type === 'tools_selected') {
-                                streamedReasoning.push({
-                                    step: 'tool_selection',
-                                    description: 'Selected tools',
-                                    selected_tools: msg.data.tools,
-                                    intelligence_level: msg.data.fallback ? 'fallback' : 'LLM-powered'
-                                });
-                                setMessages(prev => {
-                                    const updated = [...prev];
-                                    if (!updated.find(m => m.__live)) {
-                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
-                                    }
-                                    const last = updated[updated.length - 1];
-                                    last.reasoning = [...streamedReasoning];
-                                    return updated;
-                                });
-                            } else if (msg.type === 'tool_execution_start') {
-                                streamedReasoning.push({
-                                    step: 'tool_execution',
-                                    description: `Executing ${msg.data.tool}`,
-                                    tool_name: msg.data.tool
-                                });
-                                setMessages(prev => {
-                                    const updated = [...prev];
-                                    if (!updated.find(m => m.__live)) {
-                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
-                                    }
-                                    const last = updated[updated.length - 1];
-                                    last.reasoning = [...streamedReasoning];
-                                    return updated;
-                                });
-                            } else if (msg.type === 'tool_execution_result') {
-                                streamedReasoning.push({
-                                    step: 'tool_execution',
-                                    description: `Executed ${msg.data.tool}`,
-                                    tool_name: msg.data.tool,
-                                    result_count: msg.data.result_count,
-                                    category: msg.data.category,
-                                    db_metrics: msg.data.db_metrics || null,
-                                });
-                                setMessages(prev => {
-                                    const updated = [...prev];
-                                    if (!updated.find(m => m.__live)) {
-                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
-                                    }
-                                    const last = updated[updated.length - 1];
-                                    last.reasoning = [...streamedReasoning];
-                                    return updated;
-                                });
-                            } else if (msg.type === 'llm_response_update') {
-                                partialAnswer = partialAnswer + msg.data.chunk;
-                                setMessages(prev => {
-                                    const updated = [...prev];
-                                    if (!updated.find(m => m.__live)) {
-                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
-                                    }
-                                    const last = updated[updated.length - 1];
-                                    last.content = partialAnswer;
-                                    last.reasoning = [...streamedReasoning];
-                                    return updated;
-                                });
-                            } else if (msg.type === 'reasoning_append') {
-                                streamedReasoning.push(msg.data);
-                                setMessages(prev => {
-                                    const updated = [...prev];
-                                    if (!updated.find(m => m.__live)) {
-                                        updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
-                                    }
-                                    const last = updated[updated.length - 1];
-                                    last.reasoning = [...streamedReasoning];
-                                    return updated;
-                                });
-                            } else if (msg.type === 'final_response') {
-                                setMessages(prev => {
-                                    const updated = [...prev];
-                                    // Replace live message with final
-                                    const idx = updated.findIndex(m => m.__live);
-                                    const finalMsg = { role: 'assistant', content: msg.data.text, reasoning: msg.data.reasoning };
-                                    if (idx >= 0) {
-                                        updated[idx] = finalMsg;
-                                    } else {
-                                        updated.push(finalMsg);
-                                    }
-                                    return updated;
-                                });
-                                setQuery('');
-                                finalized = true;
-                                ws.close();
-                                setIsStreaming(false);
-                            } else if (msg.type === 'error') {
-                                setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your request.' }]);
-                                finalized = true;
-                                ws.close();
-                                setIsStreaming(false);
-                            }
-                        } catch (err) {
-                            console.error('Error handling WS message', err);
-                        }
-                    };
-                    const restFallback = async () => {
-                        try {
-                            const response = await fetch('/api/query', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ query })
+                    ws.send(JSON.stringify({ query: queryText }));
+                };
+                ws.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'llm_reasoning_update') {
+                            streamedReasoning.push({
+                                step: 'query_understanding',
+                                description: 'LLM analysis update',
+                                understanding: msg.data.understanding,
+                                reasoning: msg.data.reasoning,
+                                llm_analysis: msg.data.llm_analysis,
+                                intelligence_level: msg.data.intelligence_level,
+                                llm_reasoning_details: msg.data.llm_reasoning_details,
                             });
-                            const data = await response.json();
-                            const assistantMessage = { role: 'assistant', content: data.response, reasoning: data.reasoning || [] };
-                            setMessages(prev => [...prev, assistantMessage]);
+                            // Rerender by setting state shallow copy
+                            setMessages(prev => {
+                                const updated = [...prev];
+                                // Add a live assistant message if not present yet
+                                if (!updated.find(m => m.__live)) {
+                                    updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                }
+                                const last = updated[updated.length - 1];
+                                last.reasoning = [...streamedReasoning];
+                                return updated;
+                            });
+                        } else if (msg.type === 'tools_selected') {
+                            streamedReasoning.push({
+                                step: 'tool_selection',
+                                description: 'Selected tools',
+                                selected_tools: msg.data.tools,
+                                intelligence_level: msg.data.fallback ? 'fallback' : 'LLM-powered'
+                            });
+                            setMessages(prev => {
+                                const updated = [...prev];
+                                if (!updated.find(m => m.__live)) {
+                                    updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                }
+                                const last = updated[updated.length - 1];
+                                last.reasoning = [...streamedReasoning];
+                                return updated;
+                            });
+                        } else if (msg.type === 'tool_execution_start') {
+                            streamedReasoning.push({
+                                step: 'tool_execution',
+                                description: `Executing ${msg.data.tool}`,
+                                tool_name: msg.data.tool
+                            });
+                            setMessages(prev => {
+                                const updated = [...prev];
+                                if (!updated.find(m => m.__live)) {
+                                    updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                }
+                                const last = updated[updated.length - 1];
+                                last.reasoning = [...streamedReasoning];
+                                return updated;
+                            });
+                        } else if (msg.type === 'tool_execution_result') {
+                            streamedReasoning.push({
+                                step: 'tool_execution',
+                                description: `Executed ${msg.data.tool}`,
+                                tool_name: msg.data.tool,
+                                result_count: msg.data.result_count,
+                                category: msg.data.category,
+                                db_metrics: msg.data.db_metrics || null,
+                            });
+                            setMessages(prev => {
+                                const updated = [...prev];
+                                if (!updated.find(m => m.__live)) {
+                                    updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                }
+                                const last = updated[updated.length - 1];
+                                last.reasoning = [...streamedReasoning];
+                                return updated;
+                            });
+                        } else if (msg.type === 'llm_response_update') {
+                            partialAnswer = partialAnswer + msg.data.chunk;
+                            setMessages(prev => {
+                                const updated = [...prev];
+                                if (!updated.find(m => m.__live)) {
+                                    updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                }
+                                const last = updated[updated.length - 1];
+                                last.content = partialAnswer;
+                                last.reasoning = [...streamedReasoning];
+                                return updated;
+                            });
+                        } else if (msg.type === 'reasoning_append') {
+                            streamedReasoning.push(msg.data);
+                            setMessages(prev => {
+                                const updated = [...prev];
+                                if (!updated.find(m => m.__live)) {
+                                    updated.push({ role: 'assistant', content: '', reasoning: [], __live: true });
+                                }
+                                const last = updated[updated.length - 1];
+                                last.reasoning = [...streamedReasoning];
+                                return updated;
+                            });
+                        } else if (msg.type === 'final_response') {
+                            setMessages(prev => {
+                                const updated = [...prev];
+                                // Replace live message with final
+                                const idx = updated.findIndex(m => m.__live);
+                                const finalMsg = { role: 'assistant', content: msg.data.text, reasoning: msg.data.reasoning };
+                                if (idx >= 0) {
+                                    updated[idx] = finalMsg;
+                                } else {
+                                    updated.push(finalMsg);
+                                }
+                                return updated;
+                            });
                             setQuery('');
-                        } catch (e) {
-                            setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your request.' }]);
+                            finalized = true;
+                            ws.close();
+                            setIsStreaming(false);
+                        } else if (msg.type === 'error') {
+                            setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your request.', hasError: true }]);
+                            finalized = true;
+                            ws.close();
+                            setIsStreaming(false);
                         }
-                    };
-                    ws.onclose = () => {
-                        if (!finalized) {
-                            restFallback();
-                        }
-                        setIsStreaming(false);
-                    };
-                    ws.onerror = () => {
-                        if (!finalized) {
-                            restFallback();
-                        }
-                        setIsStreaming(false);
-                    };
+                    } catch (err) {
+                        console.error('Error handling WS message', err);
+                    }
+                };
+                const restFallback = async () => {
+                    try {
+                        const response = await fetch('/api/query', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ query: queryText })
+                        });
+                        const data = await response.json();
+                        const assistantMessage = { role: 'assistant', content: data.response, reasoning: data.reasoning || [] };
+                        setMessages(prev => [...prev, assistantMessage]);
+                        setQuery('');
+                    } catch (e) {
+                        setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your request.', hasError: true }]);
+                    }
+                };
+                ws.onclose = () => {
+                    if (!finalized) {
+                        restFallback();
+                    }
+                    setIsStreaming(false);
+                };
+                ws.onerror = () => {
+                    if (!finalized) {
+                        restFallback();
+                    }
+                    setIsStreaming(false);
+                };
+            };
+
+            const sendQuery = async () => {
+                if (!query.trim()) return;
+                
+                setLoading(true);
+                const userMessage = { role: 'user', content: query };
+                setMessages(prev => [...prev, userMessage]);
+                
+                try {
+                    await executeQuery(query);
                 } catch (error) {
                     console.error('Error sending query:', error);
-                    const errorMessage = { role: 'assistant', content: 'Sorry, there was an error processing your request.' };
+                    const errorMessage = { role: 'assistant', content: 'Sorry, there was an error processing your request.', hasError: true };
                     setMessages(prev => [...prev, errorMessage]);
                 } finally {
                     setLoading(false);
@@ -686,23 +708,38 @@ async def get_ui():
                                                             )}
                                                             {group.answer && (
                                                                 <div className="">
-                                                                    <div className="flex items-center mb-2">
-                                                                        <span className="text-2xl mr-3 text-green-600">🤖</span>
-                                                                        <span className="font-bold text-lg text-gray-700">Agent</span>
+                                                                    <div className="flex items-center justify-between mb-2">
+                                                                        <div className="flex items-center">
+                                                                            <span className="text-2xl mr-3 text-green-600">🤖</span>
+                                                                            <span className="font-bold text-lg text-gray-700">Agent</span>
+                                                                        </div>
+                                                                        <div className="flex items-center space-x-2">
+                                                                            {group.answer.hasError && (
+                                                                                <span className="text-red-500 text-sm">⚠️ Error occurred</span>
+                                                                            )}
+                                                                            <button
+                                                                                onClick={() => retryQuery(group.question ? group.question.content : '')}
+                                                                                disabled={loading || isStreaming}
+                                                                                className="px-3 py-1 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                                                                                title="Retry this question"
+                                                                            >
+                                                                                🔄 Retry
+                                                                            </button>
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="rich-text leading-relaxed" dangerouslySetInnerHTML={{ __html: formatResponse(group.answer.content) }} />
                                                                     {group.answer.reasoning && (
-                                                                        <details className="mt-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
-                                                                            <summary className="cursor-pointer font-semibold text-blue-800 p-4 flex items-center space-x-2 hover:bg-blue-100 rounded-t-xl transition-colors">
+                                                                        <details className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+                                                                            <summary className="cursor-pointer font-semibold text-blue-800 p-3 flex items-center space-x-2 hover:bg-blue-100 rounded-t-xl transition-colors">
                                                                                 <span>🤔</span>
                                                                                 <span>Agent Reasoning Process</span>
                                                                                 <span className="bg-blue-200 text-blue-800 px-2 py-1 rounded-full text-xs">{group.answer.reasoning.length} steps</span>
                                                                             </summary>
-                                                                            <div className="p-4 border-t border-blue-200">
+                                                                            <div className="p-3 border-t border-blue-200">
                                                                                 <div className="space-y-2" dangerouslySetInnerHTML={{ __html: formatReasoning(group.answer.reasoning) }} />
                                                                             </div>
                                                                         </details>
                                                                     )}
+                                                                    <div className="rich-text leading-relaxed" dangerouslySetInnerHTML={{ __html: formatResponse(group.answer.content) }} />
                                                                 </div>
                                                             )}
                                                         </div>
