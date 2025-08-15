@@ -1,79 +1,79 @@
 [
   {
-    "name": "find_customer_facing_vulnerable_apis",
-    "description": "Find customer-facing APIs that use vulnerable dependencies",
+    "name": "cve_impact_analysis",
+    "description": "Analyze the impact of CVEs on the codebase",
     "category": "Security",
-    "query": "\n                MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\n                MATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\n                MATCH (f)-[:DECLARES]->(m:Method {is_public: true})\n                WHERE cve.cvss_score >= 7.0\n                RETURN f.path as file_path, \n                       m.class_name + '.' + m.name as api_endpoint,\n                       cve.cve_id as cve_id,\n                       cve.cvss_score as severity,\n                       dep.package as vulnerable_dependency\n                ORDER BY cve.cvss_score DESC\n                ",
+    "query": "MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\nMATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\nWITH cve, dep, count(f) as file_count\nMATCH (f:File)-[:IMPORTS]->(i:Import)-[:DEPENDS_ON]->(dep)\nMATCH (f)-[:DECLARES]->(m:Method)\nRETURN cve.cve_id as cve_id,\n       cve.cvss_score as severity,\n       dep.package as package,\n       file_count as affected_files,\n       count(m) as affected_methods,\n       'High impact vulnerability' as assessment\nORDER BY cve.cvss_score DESC, file_count DESC",
     "parameters": null
   },
   {
     "name": "dependency_license_audit",
     "description": "Audit all open-source dependencies for license compliance",
     "category": "Security",
-    "query": "\n                MATCH (dep:ExternalDependency)\n                OPTIONAL MATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\n                RETURN dep.package as package,\n                       dep.version as version,\n                       dep.license as license,\n                       count(DISTINCT f) as usage_count,\n                       collect(DISTINCT f.path)[0..3] as sample_usage\n                ORDER BY usage_count DESC\n                ",
+    "query": "MATCH (dep:ExternalDependency)\nOPTIONAL MATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\nRETURN dep.package as package,\n       dep.version as version,\n       dep.license as license,\n       count(DISTINCT f) as usage_count,\n       collect(DISTINCT f.path)[0..3] as sample_usage\nORDER BY usage_count DESC",
     "parameters": null
   },
   {
-    "name": "refactoring_priority_matrix",
-    "description": "Find high-impact components for refactoring (20% that impact 80% of system)",
-    "category": "Architecture",
-    "query": "\n                MATCH (m:Method)\n                WHERE m.pagerank_score IS NOT NULL AND m.estimated_lines > 20\n                WITH m, (m.pagerank_score * m.estimated_lines) as impact_score\n                MATCH (m)<-[:DECLARES]-(f:File)\n                RETURN f.path as file_path,\n                       m.class_name + '.' + m.name as method_name,\n                       m.pagerank_score as system_importance,\n                       m.estimated_lines as complexity,\n                       impact_score,\n                       'High ROI refactoring target' as recommendation\n                ORDER BY impact_score DESC\n                LIMIT 20\n                ",
-    "parameters": null
-  },
-  {
-    "name": "architectural_bottlenecks",
-    "description": "Find methods with high PageRank scores indicating architectural importance",
-    "category": "Architecture",
-    "query": "\n                MATCH (m:Method)\n                WHERE m.pagerank_score IS NOT NULL AND m.pagerank_score > 0.001\n                MATCH (m)<-[:DECLARES]-(f:File)\n                RETURN f.path as file_path,\n                       m.class_name + '.' + m.name as method_name,\n                       m.pagerank_score as importance,\n                       m.estimated_lines as complexity\n                ORDER BY m.pagerank_score DESC\n                LIMIT 20\n                ",
-    "parameters": null
-  },
-  {
-    "name": "co_changed_files_analysis",
-    "description": "Find files that are frequently changed together (high coupling)",
-    "category": "Architecture",
-    "query": "\n                MATCH (f1:File)-[:CHANGED_IN]->(commit:Commit)-[:CHANGED]->(f2:FileVer)-[:OF_FILE]->(f3:File)\n                WHERE f1 <> f3\n                WITH f1, f3, count(commit) as co_changes\n                WHERE co_changes > 3\n                RETURN f1.path as file1,\n                       f3.path as file2,\n                       co_changes as change_frequency,\n                       'High coupling detected' as insight\n                ORDER BY co_changes DESC\n                LIMIT 25\n                ",
-    "parameters": null
-  },
-  {
-    "name": "complex_methods_analysis",
-    "description": "Find methods with high cyclomatic complexity",
-    "category": "Quality",
-    "query": "\n                MATCH (m:Method)\n                WHERE m.estimated_lines > 50 OR m.cyclomatic_complexity > 10\n                MATCH (m)<-[:DECLARES]-(f:File)\n                RETURN f.path as file_path,\n                       m.class_name + '.' + m.name as method_name,\n                       m.estimated_lines as lines_of_code,\n                       m.cyclomatic_complexity as complexity,\n                       'Consider refactoring' as recommendation\n                ORDER BY m.cyclomatic_complexity DESC, m.estimated_lines DESC\n                LIMIT 30\n                ",
-    "parameters": null
-  },
-  {
-    "name": "large_files_analysis",
-    "description": "Find files with excessive lines of code",
-    "category": "Quality",
-    "query": "\n                MATCH (f:File)\n                WHERE f.total_lines > 500\n                RETURN f.path as file_path,\n                       f.total_lines as lines_of_code,\n                       f.method_count as method_count,\n                       f.class_count as class_count,\n                       'Consider splitting into smaller files' as recommendation\n                ORDER BY f.total_lines DESC\n                LIMIT 25\n                ",
+    "name": "find_customer_facing_vulnerable_apis",
+    "description": "Find customer-facing APIs that use vulnerable dependencies",
+    "category": "Security",
+    "query": "MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\nMATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\nMATCH (f)-[:DECLARES]->(m:Method {is_public: true})\nWHERE cve.cvss_score >= 7.0\nRETURN f.path as file_path,\n       m.class_name + '.' + m.name as api_endpoint,\n       cve.cve_id as cve_id,\n       cve.cvss_score as severity,\n       dep.package as vulnerable_dependency\nORDER BY cve.cvss_score DESC",
     "parameters": null
   },
   {
     "name": "vulnerable_dependencies_summary",
     "description": "Find all vulnerable dependencies and their usage",
     "category": "Security",
-    "query": "\n                MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\n                MATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\n                RETURN dep.package as package,\n                       dep.version as version,\n                       cve.id as cve_id,\n                       cve.cvss_score as severity,\n                       count(DISTINCT f) as affected_files,\n                       collect(DISTINCT f.path)[0..5] as sample_files\n                ORDER BY cve.cvss_score DESC, affected_files DESC",
+    "query": "MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\nMATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\nRETURN dep.package as package,\n       dep.version as version,\n       cve.id as cve_id,\n       cve.cvss_score as severity,\n       count(DISTINCT f) as affected_files,\n       collect(DISTINCT f.path)[0..5] as sample_files\nORDER BY cve.cvss_score DESC, affected_files DESC",
     "parameters": null
   },
   {
-    "name": "cve_impact_analysis",
-    "description": "Analyze the impact of CVEs on the codebase",
-    "category": "Security",
-    "query": "\n                MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\n                MATCH (dep)<-[:DEPENDS_ON]-(f:File)\n                WITH cve, dep, count(f) as file_count\n                MATCH (f:File)-[:DEPENDS_ON]->(dep)\n                MATCH (f)-[:DECLARES]->(m:Method)\n                RETURN cve.cve_id as cve_id,\n                       cve.cvss_score as severity,\n                       dep.package as package,\n                       file_count as affected_files,\n                       count(m) as affected_methods,\n                       'High impact vulnerability' as assessment\n                ORDER BY cve.cvss_score DESC, file_count DESC\n                ",
+    "name": "architectural_bottlenecks",
+    "description": "Find methods with high PageRank scores indicating architectural importance",
+    "category": "Architecture",
+    "query": "MATCH (m:Method)\nWHERE m.pagerank_score IS NOT NULL AND m.pagerank_score > 0.001\nMATCH (m)<-[:DECLARES]-(f:File)\nRETURN f.path as file_path,\n       m.class_name + '.' + m.name as method_name,\n       m.pagerank_score as importance,\n       m.estimated_lines as complexity\nORDER BY m.pagerank_score DESC\nLIMIT 20",
+    "parameters": null
+  },
+  {
+    "name": "co_changed_files_analysis",
+    "description": "Find files that are frequently changed together (high coupling)",
+    "category": "Architecture",
+    "query": "MATCH (f1:File)-[:CHANGED_IN]->(commit:Commit)-[:CHANGED]->(f2:FileVer)-[:OF_FILE]->(f3:File)\nWHERE f1 <> f3\nWITH f1, f3, count(commit) as co_changes\nWHERE co_changes > 3\nRETURN f1.path as file1,\n       f3.path as file2,\n       co_changes as change_frequency,\n       'High coupling detected' as insight\nORDER BY co_changes DESC\nLIMIT 25",
+    "parameters": null
+  },
+  {
+    "name": "refactoring_priority_matrix",
+    "description": "Find high-impact components for refactoring (20% that impact 80% of system)",
+    "category": "Architecture",
+    "query": "MATCH (m:Method)\nWHERE m.pagerank_score IS NOT NULL AND m.estimated_lines > 20\nWITH m, (m.pagerank_score * m.estimated_lines) as impact_score\nMATCH (m)<-[:DECLARES]-(f:File)\nRETURN f.path as file_path,\n       m.class_name + '.' + m.name as method_name,\n       m.pagerank_score as system_importance,\n       m.estimated_lines as complexity,\n       impact_score,\n       'High ROI refactoring target' as recommendation\nORDER BY impact_score DESC\nLIMIT 20",
+    "parameters": null
+  },
+  {
+    "name": "complex_methods_analysis",
+    "description": "Find methods with high cyclomatic complexity",
+    "category": "Quality",
+    "query": "MATCH (m:Method)\nWHERE m.estimated_lines > 50 OR m.cyclomatic_complexity > 10\nMATCH (m)<-[:DECLARES]-(f:File)\nRETURN f.path as file_path,\n       m.class_name + '.' + m.name as method_name,\n       m.estimated_lines as lines_of_code,\n       m.cyclomatic_complexity as complexity,\n       'Consider refactoring' as recommendation\nORDER BY m.cyclomatic_complexity DESC, m.estimated_lines DESC\nLIMIT 30",
+    "parameters": null
+  },
+  {
+    "name": "large_files_analysis",
+    "description": "Find files with excessive lines of code",
+    "category": "Quality",
+    "query": "MATCH (f:File)\nWHERE f.total_lines > 500\nRETURN f.path as file_path,\n       f.total_lines as lines_of_code,\n       f.method_count as method_count,\n       f.class_count as class_count,\n       'Consider splitting into smaller files' as recommendation\nORDER BY f.total_lines DESC\nLIMIT 25",
     "parameters": null
   },
   {
     "name": "developer_activity_summary",
     "description": "Analyze developer activity and contribution patterns",
     "category": "Team",
-    "query": "\n                MATCH (dev:Developer)-[:AUTHORED]->(commit:Commit)\n                WITH dev, count(commit) as total_commits\n                MATCH (dev)-[:AUTHORED]->(commit:Commit)-[:CHANGED]->(fv:FileVer)-[:OF_FILE]->(f:File)\n                WITH dev, total_commits, f, count(commit) as file_commits\n                WITH dev, total_commits, collect({file: f.path, commits: file_commits}) as file_activity\n                RETURN dev.name as developer,\n                       total_commits as total_commits,\n                       size(file_activity) as files_worked_on,\n                       [activity in file_activity | activity.file + ' (' + toString(activity.commits) + ')'][0..5] as top_files\n                ORDER BY total_commits DESC\n                LIMIT 15\n                ",
+    "query": "MATCH (dev:Developer)-[:AUTHORED]->(commit:Commit)\nWITH dev, count(commit) as total_commits\nMATCH (dev)-[:AUTHORED]->(commit:Commit)-[:CHANGED]->(fv:FileVer)-[:OF_FILE]->(f:File)\nWITH dev, total_commits, f, count(commit) as file_commits\nWITH dev, total_commits, collect({file: f.path, commits: file_commits}) as file_activity\nRETURN dev.name as developer,\n       total_commits as total_commits,\n       size(file_activity) as files_worked_on,\n       [activity in file_activity | activity.file + ' (' + toString(activity.commits) + ')'][0..5] as top_files\nORDER BY total_commits DESC\nLIMIT 15",
     "parameters": null
   },
   {
     "name": "file_ownership_analysis",
     "description": "Analyze file ownership and developer distribution",
     "category": "Team",
-    "query": "\n                MATCH (dev:Developer)-[:AUTHORED]->(commit:Commit)-[:CHANGED]->(fv:FileVer)-[:OF_FILE]->(f:File)\n                WITH f, dev, count(commit) as commits_by_dev\n                WITH f, collect({dev: dev.name, commits: commits_by_dev}) as dev_contributions\n                WITH f, dev_contributions, \n                     [dev in dev_contributions | dev.commits] as commit_counts\n                RETURN f.path as file_path,\n                       f.total_lines as lines_of_code,\n                       size(dev_contributions) as developer_count,\n                       reduce(total = 0, count in commit_counts | total + count) as total_commits,\n                       [dev in dev_contributions | dev.dev + ' (' + toString(dev.commits) + ')'] as contributors\n                ORDER BY total_commits DESC\n                LIMIT 25\n                ",
+    "query": "MATCH (dev:Developer)-[:AUTHORED]->(commit:Commit)-[:CHANGED]->(fv:FileVer)-[:OF_FILE]->(f:File)\nWITH f, dev, count(commit) as commits_by_dev\nWITH f, collect({dev: dev.name, commits: commits_by_dev}) as dev_contributions\nWITH f, dev_contributions,\n       [dev in dev_contributions | dev.commits] as commit_counts\nRETURN f.path as file_path,\n       f.total_lines as lines_of_code,\n       size(dev_contributions) as developer_count,\n       reduce(total = 0, count in commit_counts | total + count) as total_commits,\n       [dev in dev_contributions | dev.dev + ' (' + toString(dev.commits) + ')'] as contributors\nORDER BY total_commits DESC\nLIMIT 25",
     "parameters": null
   },
   {
