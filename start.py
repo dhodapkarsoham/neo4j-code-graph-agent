@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-MCP Code Graph Agent - Startup Script
+Code Graph Agent - Startup Script
 
-This script provides a simple way to start the MCP Code Graph Agent
+This script provides a simple way to start the Code Graph Agent
 with proper environment setup and error handling.
 """
 
@@ -44,7 +44,7 @@ def check_dependencies():
 
 def main():
     """Main startup function."""
-    print("🚀 Starting MCP Code Graph Agent...")
+    print("🚀 Starting Code Graph Agent...")
     print("=" * 50)
     
     # Pre-flight checks

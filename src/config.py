@@ -1,4 +1,4 @@
-"""Configuration management for MCP Code Graph Agent."""
+"""Configuration management for Code Graph Agent."""
 
 import os
 from pathlib import Path
@@ -21,9 +21,7 @@ class Settings(BaseSettings):
     azure_openai_api_version: str = "2024-12-01-preview"
     azure_openai_deployment_name: Optional[str] = None
     
-    # MCP Server Configuration
-    mcp_server_port: int = 3000
-    mcp_server_host: str = "localhost"
+
     
     # Application Configuration
     debug: bool = True

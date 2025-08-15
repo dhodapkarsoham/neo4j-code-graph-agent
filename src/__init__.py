@@ -1,1 +1,1 @@
-# MCP Code Graph Agent
+# Code Graph Agent

@@ -1,9 +1,9 @@
-"""LangGraph-based agent for orchestrating MCP tools."""
+"""LangGraph-based agent for orchestrating code analysis tools."""
 
 import logging
 from typing import Dict, List, Any, TypedDict
 from langgraph.graph import StateGraph, END
-from src.mcp_tools import tool_registry
+from src.tools import tool_registry
 from src.llm import llm_client
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class AgentState(TypedDict):
 
 
 class CodeGraphAgent:
-    """Intelligent agent that orchestrates MCP tools to answer user questions."""
+    """Intelligent agent that orchestrates code analysis tools to answer user questions."""
     
     def __init__(self):
         """Initialize the agent."""

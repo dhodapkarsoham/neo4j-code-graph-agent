@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from src.agent import agent
-from src.mcp_tools import tool_registry
+from src.tools import tool_registry
 from src.database import db
 from src.config import settings
 
@@ -1427,7 +1427,7 @@ async def health_check():
         neo4j_ok = False
     return {
         "status": "healthy",
-        "message": "MCP Code Graph Agent is running",
+        "message": "Code Graph Agent is running",
         "neo4j": {
             "connected": bool(neo4j_ok),
             "uri": settings.neo4j_uri,

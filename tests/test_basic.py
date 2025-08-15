@@ -12,7 +12,7 @@ def test_imports():
     """Test that all main modules can be imported."""
     try:
         from src.config import settings
-        from src.mcp_tools import MCPToolRegistry
+        from src.tools import ToolRegistry
         from src.database import db
         assert True
     except ImportError as e:
@@ -31,9 +31,9 @@ def test_config_loading():
 
 def test_tool_registry_creation():
     """Test tool registry can be created."""
-    from src.mcp_tools import MCPToolRegistry
+    from src.tools import ToolRegistry
     
-    registry = MCPToolRegistry()
+    registry = ToolRegistry()
     assert registry is not None
     assert hasattr(registry, 'tools')
     assert hasattr(registry, 'list_tools')
@@ -41,9 +41,9 @@ def test_tool_registry_creation():
 
 def test_tool_registry_list_tools():
     """Test tool registry can list tools."""
-    from src.mcp_tools import MCPToolRegistry
+    from src.tools import ToolRegistry
     
-    registry = MCPToolRegistry()
+    registry = ToolRegistry()
     tools = registry.list_tools()
     
     assert isinstance(tools, list)
@@ -80,7 +80,7 @@ def test_agent_creation():
 def test_basic_functionality():
     """Test basic system functionality."""
     from src.config import settings
-    from src.mcp_tools import MCPToolRegistry
+    from src.tools import ToolRegistry
     from src.llm import AzureOpenAIClient
     from src.agent import CodeGraphAgent
     
@@ -88,7 +88,7 @@ def test_basic_functionality():
     assert settings.port == 8000
     
     # Test tool registry
-    registry = MCPToolRegistry()
+    registry = ToolRegistry()
     tools = registry.list_tools()
     assert len(tools) >= 10  # Should have at least 10 predefined tools
     

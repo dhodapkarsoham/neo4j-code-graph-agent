@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from src.web_ui import app
 from src.agent import CodeGraphAgent
-from src.mcp_tools import MCPToolRegistry
+from src.tools import ToolRegistry
 
 
 class TestIntegration:
@@ -27,7 +27,7 @@ class TestIntegration:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "healthy"
-        assert "MCP Code Graph Agent" in data["message"]
+        assert "Code Graph Agent" in data["message"]
 
     @patch('src.web_ui.tool_registry')
     def test_list_tools_endpoint(self, mock_tool_registry):

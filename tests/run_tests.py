@@ -67,7 +67,7 @@ def run_component_tests(verbose=False):
     print("🔧 Running Component Tests...")
     components = [
         "tests/test_config.py",
-        "tests/test_mcp_tools.py", 
+        "tests/test_tools.py", 
         "tests/test_llm.py",
         "tests/test_agent.py",
         "tests/test_database.py"
