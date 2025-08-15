@@ -29,7 +29,7 @@ class CodeGraphAgent:
         """Initialize the agent."""
         self.workflow = self._create_workflow()
 
-    def _create_workflow(self) -> StateGraph:
+    def _create_workflow(self) -> Any:
         """Create the LangGraph workflow."""
         workflow = StateGraph(AgentState)
 
