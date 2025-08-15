@@ -56,7 +56,7 @@ class MCPToolRegistry:
                 category="Security",
                 query="""
                 MATCH (dep:ExternalDependency)
-                OPTIONAL MATCH (dep)<-[:DEPENDS_ON]-(f:File)
+                OPTIONAL MATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)
                 RETURN dep.package as package,
                        dep.version as version,
                        dep.license as license,
@@ -165,7 +165,7 @@ class MCPToolRegistry:
                 category="Security",
                 query="""
                 MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)
-                MATCH (dep)<-[:DEPENDS_ON]-(f:File)
+                MATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)
                 RETURN dep.package as package,
                        dep.version as version,
                        cve.cve_id as cve_id,
@@ -182,7 +182,7 @@ class MCPToolRegistry:
                 category="Security",
                 query="""
                 MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)
-                MATCH (dep)<-[:DEPENDS_ON]-(f:File)
+                MATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)
                 WITH cve, dep, count(f) as file_count
                 MATCH (f:File)-[:DEPENDS_ON]->(dep)
                 MATCH (f)-[:DECLARES]->(m:Method)

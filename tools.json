@@ -10,7 +10,7 @@
     "name": "dependency_license_audit",
     "description": "Audit all open-source dependencies for license compliance",
     "category": "Security",
-    "query": "\n                MATCH (dep:ExternalDependency)\n                OPTIONAL MATCH (dep)<-[:DEPENDS_ON]-(f:File)\n                RETURN dep.package as package,\n                       dep.version as version,\n                       dep.license as license,\n                       count(DISTINCT f) as usage_count,\n                       collect(DISTINCT f.path)[0..3] as sample_usage\n                ORDER BY usage_count DESC\n                ",
+    "query": "\n                MATCH (dep:ExternalDependency)\n                OPTIONAL MATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\n                RETURN dep.package as package,\n                       dep.version as version,\n                       dep.license as license,\n                       count(DISTINCT f) as usage_count,\n                       collect(DISTINCT f.path)[0..3] as sample_usage\n                ORDER BY usage_count DESC\n                ",
     "parameters": null
   },
   {
@@ -52,7 +52,7 @@
     "name": "vulnerable_dependencies_summary",
     "description": "Find all vulnerable dependencies and their usage",
     "category": "Security",
-    "query": "\n                MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\n                MATCH (dep)<-[:DEPENDS_ON]-(f:File)\n                RETURN dep.package as package,\n                       dep.version as version,\n                       cve.cve_id as cve_id,\n                       cve.cvss_score as severity,\n                       count(DISTINCT f) as affected_files,\n                       collect(DISTINCT f.path)[0..5] as sample_files\n                ORDER BY cve.cvss_score DESC, affected_files DESC\n                ",
+    "query": "\n                MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\n                MATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\n                RETURN dep.package as package,\n                       dep.version as version,\n                       cve.id as cve_id,\n                       cve.cvss_score as severity,\n                       count(DISTINCT f) as affected_files,\n                       collect(DISTINCT f.path)[0..5] as sample_files\n                ORDER BY cve.cvss_score DESC, affected_files DESC",
     "parameters": null
   },
   {
