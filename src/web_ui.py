@@ -654,7 +654,16 @@ async def get_ui() -> HTMLResponse:
                         loadTools();
                     } else {
                         const errorData = await response.json();
-                        showNotification(`Failed to delete tool: ${errorData.detail}`, 'error');
+                        let errorMessage = errorData.detail || 'Failed to delete tool';
+                        
+                        // Provide more user-friendly error messages
+                        if (response.status === 403) {
+                            errorMessage = `Cannot delete pre-built tool "${toolName}". Pre-built tools are protected.`;
+                        } else if (response.status === 404) {
+                            errorMessage = `Tool "${toolName}" not found. It may have been already deleted.`;
+                        }
+                        
+                        showNotification(errorMessage, 'error');
                     }
                 } catch (error) {
                     console.error('Error deleting tool:', error);
@@ -1304,7 +1313,8 @@ async def get_ui() -> HTMLResponse:
                                                             >
                                                                 📋 Details
                                                             </button>
-                                                            {tool.category === 'Custom' && (
+                                                            {/* Show delete button only for user-created tools (not pre-built) */}
+                                                            {!tool.is_prebuilt && (
                                                                 <button
                                                                     onClick={() => deleteCustomTool(tool.name)}
                                                                     className="px-4 py-3 bg-red-500 text-white rounded-xl text-base font-semibold hover:bg-red-600 transition-colors duration-200"
@@ -1333,10 +1343,17 @@ async def get_ui() -> HTMLResponse:
                                                     ✕
                                                 </button>
                                             </div>
-                                            {selectedTool.category === 'Custom' && (
+                                            {/* Show different messages for pre-built vs user-created tools */}
+                                            {selectedTool.is_prebuilt ? (
+                                                <div className="mb-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+                                                    <p className="text-yellow-800 text-sm">
+                                                        🔒 <strong>Pre-built Tool:</strong> This tool is protected and cannot be modified or deleted.
+                                                    </p>
+                                                </div>
+                                            ) : (
                                                 <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-400 rounded">
                                                     <p className="text-blue-800 text-sm">
-                                                        ✏️ <strong>Custom Tool:</strong> You can edit the name, description, and query for this tool.
+                                                        ✏️ <strong>User-created Tool:</strong> You can edit the name, description, and query for this tool.
                                                     </p>
                                                 </div>
                                             )}
@@ -1350,11 +1367,11 @@ async def get_ui() -> HTMLResponse:
                                                             type="text"
                                                             value={editingTool.name}
                                                             onChange={(e) => setEditingTool({...editingTool, name: e.target.value})}
-                                                            disabled={selectedTool.category !== 'Custom'}
+                                                            disabled={selectedTool.is_prebuilt}
                                                             className={`w-full p-3 border-2 rounded-xl text-lg ${
-                                                                selectedTool.category === 'Custom' 
-                                                                    ? 'border-blue-200 focus:border-blue-500 focus:outline-none' 
-                                                                    : 'border-gray-200 bg-gray-50'
+                                                                selectedTool.is_prebuilt 
+                                                                    ? 'border-gray-200 bg-gray-50' 
+                                                                    : 'border-blue-200 focus:border-blue-500 focus:outline-none'
                                                             }`}
                                                         />
                                                     </div>
@@ -1374,12 +1391,12 @@ async def get_ui() -> HTMLResponse:
                                                     <textarea
                                                         value={editingTool.description}
                                                         onChange={(e) => setEditingTool({...editingTool, description: e.target.value})}
-                                                        disabled={selectedTool.category !== 'Custom'}
+                                                        disabled={selectedTool.is_prebuilt}
                                                         rows="3"
                                                         className={`w-full p-3 border-2 rounded-xl text-lg resize-none ${
-                                                            selectedTool.category === 'Custom' 
-                                                                ? 'border-blue-200 focus:border-blue-500 focus:outline-none' 
-                                                                : 'border-gray-200 bg-gray-50'
+                                                            selectedTool.is_prebuilt 
+                                                                ? 'border-gray-200 bg-gray-50' 
+                                                                : 'border-blue-200 focus:border-blue-500 focus:outline-none'
                                                         }`}
                                                     />
                                                 </div>
@@ -1565,6 +1582,12 @@ async def update_tool(tool_name: str, request: Request) -> Dict[str, Any]:
         if not tool:
             raise HTTPException(status_code=404, detail="Tool not found")
 
+        # Check if it's a pre-built tool (prevent modification)
+        if tool.is_prebuilt:
+            raise HTTPException(
+                status_code=403, detail=f"Cannot modify pre-built tool '{tool_name}'. Pre-built tools are protected."
+            )
+
         # Check if new name conflicts with existing tool (if name is being changed)
         if new_name != tool_name:
             existing_tool = tool_registry.get_tool_by_name(new_name)
@@ -1601,13 +1624,29 @@ async def update_tool(tool_name: str, request: Request) -> Dict[str, Any]:
 async def delete_tool(tool_name: str) -> Dict[str, Any]:
     """Delete a custom tool."""
     try:
+        # Check if tool exists first
+        tool = tool_registry.get_tool_by_name(tool_name)
+        if not tool:
+            raise HTTPException(
+                status_code=404, detail=f"Tool '{tool_name}' not found"
+            )
+        
+        # Check if it's a pre-built tool
+        if tool.is_prebuilt:
+            raise HTTPException(
+                status_code=403, detail=f"Cannot delete pre-built tool '{tool_name}'. Pre-built tools are protected."
+            )
+        
         success = tool_registry.remove_tool(tool_name)
         if not success:
             raise HTTPException(
-                status_code=404, detail="Custom tool not found or cannot be deleted"
+                status_code=500, detail=f"Failed to delete tool '{tool_name}'"
             )
 
         return {"message": "Tool deleted successfully", "tool_name": tool_name}
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
         logger.error(f"Error deleting tool {tool_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
