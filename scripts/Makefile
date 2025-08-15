@@ -49,7 +49,7 @@ run-dev: ## Run development server
 	python start.py
 
 run-prod: ## Run production server
-	uvicorn src.web_ui:app --host 0.0.0.0 --port 8000 --workers 4
+	uvicorn src.web_ui:app --host 127.0.0.1 --port 8000 --workers 4
 
 check-all: ## Run all checks (test, lint, security)
 	make test

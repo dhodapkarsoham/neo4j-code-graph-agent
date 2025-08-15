@@ -31,7 +31,7 @@ class TestSettings:
 
             # Test application defaults
             assert settings.debug is True
-            assert settings.host == "0.0.0.0"
+            assert settings.host == "127.0.0.1"
             assert settings.port == 8000
 
     def test_environment_variable_loading(self):

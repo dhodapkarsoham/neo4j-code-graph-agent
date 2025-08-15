@@ -106,7 +106,7 @@ AZURE_OPENAI_DEPLOYMENT_NAME=deployment-name
 
 # Application Configuration
 DEBUG=true
-HOST=0.0.0.0
+HOST=127.0.0.1
 PORT=8000
 ```
 
