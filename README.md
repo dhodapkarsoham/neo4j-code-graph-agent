@@ -1,5 +1,14 @@
 # 🕵️ Neo4j Code Graph Agent
 
+[![CI/CD Pipeline](https://github.com/yourusername/neo4j-code-graph-agent/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/yourusername/neo4j-code-graph-agent/actions)
+[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
+[![Type Checked: mypy](https://img.shields.io/badge/mypy-checked-blue.svg)](https://mypy-lang.org/)
+[![Security: Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://bandit.readthedocs.io/)
+[![Vulnerabilities: Safety](https://img.shields.io/badge/vulnerabilities-safety-green.svg)](https://pyup.io/safety/)
+
 ⚠️ Work in Progress: This repository is actively being developed. Feel free to try it out and provide feedback, but expect some changes and improvements as we development continues.
 
 ### This repository is an extension to [Alex Woolford's](https://www.linkedin.com/in/alexwoolford) Neo4j Code Graph 🙌. <br>
@@ -260,6 +269,44 @@ The basic test suite verifies:
    - Check that tools have appropriate descriptions
    - Verify the LLM configuration is correct
 
+## 🚀 CI/CD Pipeline
+
+This project uses GitHub Actions for continuous integration and deployment:
+
+### Automated Checks
+- **Tests**: Runs on Python 3.9, 3.10, and 3.11
+- **Code Quality**: Black formatting, isort imports, flake8 linting
+- **Type Checking**: mypy static type analysis
+- **Security**: Bandit security scanning, Safety vulnerability checks
+- **Build**: Package building and validation
+
+### Development Workflow
+```bash
+# Install development dependencies
+pip install -r requirements.txt
+
+# Run local CI checks
+./ci/scripts/ci-runner.sh full
+
+# Or run individual checks
+./ci/scripts/ci-runner.sh test    # Run tests
+./ci/scripts/ci-runner.sh lint    # Run linting
+./ci/scripts/ci-runner.sh security # Run security checks
+```
+
+### Pre-commit Hooks
+Set up pre-commit hooks for automatic code quality checks:
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install the git hook scripts
+pre-commit install
+
+# Run against all files
+pre-commit run --all-files
+```
+
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -267,6 +314,13 @@ The basic test suite verifies:
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+### Development Guidelines
+- Follow the existing code style (Black + isort)
+- Add type hints to new functions
+- Include tests for new features
+- Update documentation as needed
+- Ensure all CI checks pass before submitting PR
 
 ## 📄 License
 

@@ -2,21 +2,23 @@
 
 import json
 import logging
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
 from src.agent import agent
-from src.tools import tool_registry
-from src.database import db
 from src.config import settings
+from src.database import db
+from src.tools import tool_registry
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 # Suppress noisy neo4j driver logs
-logging.getLogger('neo4j').setLevel(logging.ERROR)
+logging.getLogger("neo4j").setLevel(logging.ERROR)
 
 app = FastAPI(title="Code Graph Agent", version="1.0.0")
 
@@ -32,10 +34,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/", response_class=HTMLResponse)
 async def get_ui():
     """Serve the main UI."""
-    return HTMLResponse(content="""
+    return HTMLResponse(
+        content="""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1416,7 +1420,9 @@ async def get_ui():
     </script>
 </body>
 </html>
-    """)
+    """
+    )
+
 
 @app.get("/api/health")
 async def health_check():
@@ -1433,8 +1439,13 @@ async def health_check():
             "uri": settings.neo4j_uri,
             "database": settings.neo4j_database,
         },
-        "llm": getattr(agent, "llm_client", None) and getattr(agent.llm_client, "status", None) or getattr(__import__("src.llm", fromlist=["llm_client"]).llm_client, "status", {})
+        "llm": getattr(agent, "llm_client", None)
+        and getattr(agent.llm_client, "status", None)
+        or getattr(
+            __import__("src.llm", fromlist=["llm_client"]).llm_client, "status", {}
+        ),
     }
+
 
 @app.get("/api/tools")
 async def list_tools():
@@ -1445,36 +1456,39 @@ async def list_tools():
         logger.error(f"Error listing tools: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/tools")
 async def create_tool(request: Request):
     """Create a new custom tool."""
     try:
         data = await request.json()
         logger.info(f"Received tool creation request: {data}")
-        
+
         # Validate required fields
         required_fields = ["name", "description", "category", "query"]
         for field in required_fields:
             if not data.get(field):
-                raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
-        
+                raise HTTPException(
+                    status_code=400, detail=f"Missing required field: {field}"
+                )
+
         # Create the tool in the registry
         new_tool = tool_registry.add_tool(
             name=data["name"],
             description=data["description"],
             category=data["category"],
             query=data["query"],
-            parameters=data.get("parameters")
+            parameters=data.get("parameters"),
         )
-        
+
         return {
             "message": "Tool created successfully",
             "tool": {
                 "name": new_tool.name,
                 "description": new_tool.description,
                 "category": new_tool.category,
-                "has_parameters": new_tool.parameters is not None
-            }
+                "has_parameters": new_tool.parameters is not None,
+            },
         }
     except HTTPException:
         # Re-raise HTTPExceptions (like validation errors) as-is
@@ -1484,9 +1498,13 @@ async def create_tool(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         import traceback
+
         error_details = f"{str(e)} | Traceback: {traceback.format_exc()}"
         logger.error(f"Error creating tool: {error_details}")
-        raise HTTPException(status_code=500, detail=str(e) if str(e) else "Unknown error occurred")
+        raise HTTPException(
+            status_code=500, detail=str(e) if str(e) else "Unknown error occurred"
+        )
+
 
 @app.get("/api/tools/{tool_name}/test")
 async def test_tool(tool_name: str):
@@ -1498,6 +1516,7 @@ async def test_tool(tool_name: str):
         logger.error(f"Error testing tool {tool_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/tools/{tool_name}/details")
 async def get_tool_details(tool_name: str):
     """Get detailed information about a specific tool."""
@@ -1505,17 +1524,18 @@ async def get_tool_details(tool_name: str):
         tool = tool_registry.get_tool_by_name(tool_name)
         if not tool:
             raise HTTPException(status_code=404, detail="Tool not found")
-        
+
         return {
             "name": tool.name,
             "description": tool.description,
             "category": tool.category,
             "query": tool.query,
-            "has_parameters": tool.parameters is not None
+            "has_parameters": tool.parameters is not None,
         }
     except Exception as e:
         logger.error(f"Error getting tool details for {tool_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.put("/api/tools/{tool_name}/update")
 async def update_tool(tool_name: str, request: Request):
@@ -1525,41 +1545,49 @@ async def update_tool(tool_name: str, request: Request):
         new_name = data.get("name", "")
         new_description = data.get("description", "")
         new_query = data.get("query", "")
-        
+
         # Validate required fields
         if not new_name or not new_description or not new_query:
-            raise HTTPException(status_code=400, detail="Name, description, and query are required")
-        
+            raise HTTPException(
+                status_code=400, detail="Name, description, and query are required"
+            )
+
         # Get the tool
         tool = tool_registry.get_tool_by_name(tool_name)
         if not tool:
             raise HTTPException(status_code=404, detail="Tool not found")
-        
+
         # Check if new name conflicts with existing tool (if name is being changed)
         if new_name != tool_name:
             existing_tool = tool_registry.get_tool_by_name(new_name)
             if existing_tool:
-                raise HTTPException(status_code=400, detail=f"Tool with name '{new_name}' already exists")
-        
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Tool with name '{new_name}' already exists",
+                )
+
         # Update the tool's properties
         old_name = tool.name
         tool.name = new_name
         tool.description = new_description
         tool.query = new_query
-        
+
         # Save all tools to file
         tool_registry._save_all_tools()
-        
-        logger.info(f"Updated tool '{old_name}' to '{new_name}': {new_description[:50]}...")
-        
+
+        logger.info(
+            f"Updated tool '{old_name}' to '{new_name}': {new_description[:50]}..."
+        )
+
         return {
-            "message": "Tool updated successfully", 
+            "message": "Tool updated successfully",
             "old_name": old_name,
-            "new_name": new_name
+            "new_name": new_name,
         }
     except Exception as e:
         logger.error(f"Error updating tool {tool_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.delete("/api/tools/{tool_name}")
 async def delete_tool(tool_name: str):
@@ -1567,12 +1595,15 @@ async def delete_tool(tool_name: str):
     try:
         success = tool_registry.remove_tool(tool_name)
         if not success:
-            raise HTTPException(status_code=404, detail="Custom tool not found or cannot be deleted")
-        
+            raise HTTPException(
+                status_code=404, detail="Custom tool not found or cannot be deleted"
+            )
+
         return {"message": "Tool deleted successfully", "tool_name": tool_name}
     except Exception as e:
         logger.error(f"Error deleting tool {tool_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/query")
 async def query_agent(request: Request):
@@ -1580,22 +1611,23 @@ async def query_agent(request: Request):
     try:
         data = await request.json()
         query = data.get("query", "")
-        
+
         if not query:
             raise HTTPException(status_code=400, detail="Query is required")
-        
+
         # Process the query through the agent
         result = await agent.process_query(query)
-        
+
         return {
             "response": result["response"],
             "reasoning": result.get("reasoning", []),
             "tools_used": result.get("tools_used", []),
-            "understanding": result.get("understanding", {})
+            "understanding": result.get("understanding", {}),
         }
     except Exception as e:
         logger.error(f"Error processing query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.websocket("/ws/query")
 async def ws_query(websocket: WebSocket):
@@ -1604,7 +1636,9 @@ async def ws_query(websocket: WebSocket):
         init = await websocket.receive_json()
         user_query = init.get("query", "")
         if not user_query:
-            await websocket.send_json({"type": "error", "data": {"message": "Query is required"}})
+            await websocket.send_json(
+                {"type": "error", "data": {"message": "Query is required"}}
+            )
             await websocket.close()
             return
 
@@ -1616,11 +1650,15 @@ async def ws_query(websocket: WebSocket):
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
         try:
-            await websocket.send_json({"type": "error", "data": {"message": "Internal error"}})
+            await websocket.send_json(
+                {"type": "error", "data": {"message": "Internal error"}}
+            )
         except Exception:
             pass
         await websocket.close()
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

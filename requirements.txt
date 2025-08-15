@@ -21,18 +21,4 @@ python-dotenv>=1.0.0,<2.0.0
 dataclasses-json>=0.6.0
 
 # Standard library extensions
-pathlib2>=2.3.7; python_version < "3.4"
 typing-extensions>=4.8.0
-
-# Development and testing dependencies
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-
-# Logging (standard library, but good to be explicit about versions for extensions)
-# logging is part of standard library, no need to specify
-
-# JSON handling (standard library)
-# json is part of standard library
-
-# Time handling (standard library) 
-# time is part of standard library

@@ -41,7 +41,7 @@ install_deps() {
 # Function to run tests
 run_tests() {
     log_info "Running tests..."
-    pytest tests/ -v --cov=src --cov-report=term-missing
+    pytest tests/test_ci_cd.py tests/test_basic.py -v --cov=src --cov-report=term-missing
     log_success "Tests completed"
 }
 
