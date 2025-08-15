@@ -82,5 +82,12 @@
     "category": "Custom",
     "query": "MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(:Import)<-[:IMPORTS]-(file:File)\nWHERE cve.severity = \"CRITICAL\"\nRETURN DISTINCT cve.id as cve_id, collect(file.name) as affected_files\nORDER BY affected_files DESC",
     "parameters": null
+  },
+  {
+    "name": "test",
+    "description": "test",
+    "category": "Security",
+    "query": "test",
+    "parameters": null
   }
 ]

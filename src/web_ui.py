@@ -1115,7 +1115,7 @@ async def get_ui() -> HTMLResponse:
                         {activeTab === 'tools' && (
                             <div className="space-y-8">
                                 {/* Statistics Dashboard */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
                                     <div className="glass-effect p-6 rounded-2xl shadow-lg text-center">
                                         <div className="text-3xl font-bold text-blue-600">{tools.length}</div>
                                         <div className="text-base text-gray-600">Total Tools</div>
@@ -1124,7 +1124,7 @@ async def get_ui() -> HTMLResponse:
                                         className="glass-effect p-6 rounded-2xl shadow-lg text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200"
                                         style={{"--hover-bg": "#F2EAD4"}}
                                         onMouseEnter={(e) => e.target.style.backgroundColor = "#F2EAD4"}
-                                        onMouseLeave={(e) => e.target.style.backgroundColor = ""}
+                                        onMouseLeave={(e) => e.target.style.backgroundColor = "transparent"}
                                         onClick={() => scrollToSection('Security')}
                                     >
                                         <div className="text-3xl font-bold text-red-600">{getToolsByCategory('Security').length}</div>
@@ -1134,7 +1134,7 @@ async def get_ui() -> HTMLResponse:
                                         className="glass-effect p-6 rounded-2xl shadow-lg text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200"
                                         style={{"--hover-bg": "#F2EAD4"}}
                                         onMouseEnter={(e) => e.target.style.backgroundColor = "#F2EAD4"}
-                                        onMouseLeave={(e) => e.target.style.backgroundColor = ""}
+                                        onMouseLeave={(e) => e.target.style.backgroundColor = "transparent"}
                                         onClick={() => scrollToSection('Architecture')}
                                     >
                                         <div className="text-3xl font-bold text-purple-600">{getToolsByCategory('Architecture').length}</div>
@@ -1144,7 +1144,7 @@ async def get_ui() -> HTMLResponse:
                                         className="glass-effect p-6 rounded-2xl shadow-lg text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200"
                                         style={{"--hover-bg": "#F2EAD4"}}
                                         onMouseEnter={(e) => e.target.style.backgroundColor = "#F2EAD4"}
-                                        onMouseLeave={(e) => e.target.style.backgroundColor = ""}
+                                        onMouseLeave={(e) => e.target.style.backgroundColor = "transparent"}
                                         onClick={() => scrollToSection('Team')}
                                     >
                                         <div className="text-3xl font-bold text-orange-600">{getToolsByCategory('Team').length}</div>
@@ -1154,7 +1154,17 @@ async def get_ui() -> HTMLResponse:
                                         className="glass-effect p-6 rounded-2xl shadow-lg text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200"
                                         style={{"--hover-bg": "#F2EAD4"}}
                                         onMouseEnter={(e) => e.target.style.backgroundColor = "#F2EAD4"}
-                                        onMouseLeave={(e) => e.target.style.backgroundColor = ""}
+                                        onMouseLeave={(e) => e.target.style.backgroundColor = "transparent"}
+                                        onClick={() => scrollToSection('Quality')}
+                                    >
+                                        <div className="text-3xl font-bold text-green-600">{getToolsByCategory('Quality').length}</div>
+                                        <div className="text-base text-gray-600">Quality Tools</div>
+                                    </div>
+                                    <div 
+                                        className="glass-effect p-6 rounded-2xl shadow-lg text-center cursor-pointer hover:shadow-xl hover:scale-105 transition-all duration-200"
+                                        style={{"--hover-bg": "#F2EAD4"}}
+                                        onMouseEnter={(e) => e.target.style.backgroundColor = "#F2EAD4"}
+                                        onMouseLeave={(e) => e.target.style.backgroundColor = "transparent"}
                                         onClick={() => scrollToSection('Custom')}
                                     >
                                         <div className="text-3xl font-bold text-gray-600">{getToolsByCategory('Custom').length}</div>
