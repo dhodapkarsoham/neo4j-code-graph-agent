@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 class AzureOpenAIClient:
     """Azure OpenAI client for LLM interactions."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize Azure OpenAI client."""
-        self.client = None
+        self.client: Optional[Any] = None
         self.last_metrics: Optional[Dict[str, Any]] = None
         # Lightweight status tracking for health endpoint and UI
         self.status: Dict[str, Any] = {
@@ -30,7 +30,7 @@ class AzureOpenAIClient:
         }
         self._initialize_client()
 
-    def _initialize_client(self):
+    def _initialize_client(self) -> None:
         """Initialize the Azure OpenAI client."""
         logger.info(
             f"Azure OpenAI API Key: {'Set' if settings.azure_openai_api_key else 'Not set'}"
@@ -176,7 +176,11 @@ class AzureOpenAIClient:
                 str(total_tokens) if total_tokens is not None else "?",
             )
 
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            if content is None:
+                raise ValueError("LLM response content is None")
+            stripped_content: str = content.strip()
+            return stripped_content
 
         except Exception as e:
             logger.error(f"Error generating response: {e}")

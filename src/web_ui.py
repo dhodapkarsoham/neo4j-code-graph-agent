@@ -36,7 +36,7 @@ app.add_middleware(
 
 
 @app.get("/", response_class=HTMLResponse)
-async def get_ui():
+async def get_ui() -> HTMLResponse:
     """Serve the main UI."""
     return HTMLResponse(
         content="""
@@ -1425,7 +1425,7 @@ async def get_ui():
 
 
 @app.get("/api/health")
-async def health_check():
+async def health_check() -> Dict[str, Any]:
     """Health check endpoint."""
     try:
         neo4j_ok = db.test_connection()
@@ -1439,16 +1439,14 @@ async def health_check():
             "uri": settings.neo4j_uri,
             "database": settings.neo4j_database,
         },
-        "llm": getattr(agent, "llm_client", None)
-        and getattr(agent.llm_client, "status", None)
-        or getattr(
+        "llm": getattr(
             __import__("src.llm", fromlist=["llm_client"]).llm_client, "status", {}
         ),
     }
 
 
 @app.get("/api/tools")
-async def list_tools():
+async def list_tools() -> List[Dict[str, Any]]:
     """List all available tools."""
     try:
         return tool_registry.list_tools()
@@ -1458,7 +1456,7 @@ async def list_tools():
 
 
 @app.post("/api/tools")
-async def create_tool(request: Request):
+async def create_tool(request: Request) -> Dict[str, Any]:
     """Create a new custom tool."""
     try:
         data = await request.json()
@@ -1507,7 +1505,7 @@ async def create_tool(request: Request):
 
 
 @app.get("/api/tools/{tool_name}/test")
-async def test_tool(tool_name: str):
+async def test_tool(tool_name: str) -> Dict[str, Any]:
     """Test a specific tool."""
     try:
         result = tool_registry.execute_tool(tool_name)
@@ -1518,7 +1516,7 @@ async def test_tool(tool_name: str):
 
 
 @app.get("/api/tools/{tool_name}/details")
-async def get_tool_details(tool_name: str):
+async def get_tool_details(tool_name: str) -> Dict[str, Any]:
     """Get detailed information about a specific tool."""
     try:
         tool = tool_registry.get_tool_by_name(tool_name)
@@ -1538,7 +1536,7 @@ async def get_tool_details(tool_name: str):
 
 
 @app.put("/api/tools/{tool_name}/update")
-async def update_tool(tool_name: str, request: Request):
+async def update_tool(tool_name: str, request: Request) -> Dict[str, Any]:
     """Update tool properties (name, description, query) for a specific tool."""
     try:
         data = await request.json()
@@ -1590,7 +1588,7 @@ async def update_tool(tool_name: str, request: Request):
 
 
 @app.delete("/api/tools/{tool_name}")
-async def delete_tool(tool_name: str):
+async def delete_tool(tool_name: str) -> Dict[str, Any]:
     """Delete a custom tool."""
     try:
         success = tool_registry.remove_tool(tool_name)
@@ -1606,7 +1604,7 @@ async def delete_tool(tool_name: str):
 
 
 @app.post("/api/query")
-async def query_agent(request: Request):
+async def query_agent(request: Request) -> Dict[str, Any]:
     """Process a query through the agent."""
     try:
         data = await request.json()
@@ -1630,7 +1628,7 @@ async def query_agent(request: Request):
 
 
 @app.websocket("/ws/query")
-async def ws_query(websocket: WebSocket):
+async def ws_query(websocket: WebSocket) -> None:
     await websocket.accept()
     try:
         init = await websocket.receive_json()

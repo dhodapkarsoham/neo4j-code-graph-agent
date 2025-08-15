@@ -25,14 +25,14 @@ class CodeTool:
 class ToolRegistry:
     """Registry for Code Analysis tools."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize tool registry and load tools from JSON file."""
         self.tools_file = Path(__file__).parent.parent / "tools.json"
         self.tools = self._load_all_tools()
 
-    def _create_empty_tools_file(self):
+    def _create_empty_tools_file(self) -> None:
         """Create an empty tools.json file with basic structure."""
-        empty_tools = []
+        empty_tools: List[CodeTool] = []
         self._save_all_tools(empty_tools)
         logger.info(f"Created empty tools file at {self.tools_file}")
 
@@ -53,7 +53,7 @@ class ToolRegistry:
         self._create_empty_tools_file()
         return []
 
-    def _save_all_tools(self, tools: List[CodeTool] = None):
+    def _save_all_tools(self, tools: List[CodeTool] = None) -> None:
         """Save all tools to JSON file."""
         if tools is None:
             tools = self.tools

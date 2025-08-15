@@ -1,7 +1,7 @@
 """LangGraph-based agent for orchestrating code analysis tools."""
 
 import logging
-from typing import Any, Dict, List, TypedDict
+from typing import Any, AsyncGenerator, Dict, List, TypedDict
 
 from langgraph.graph import END, StateGraph
 
@@ -25,7 +25,7 @@ class AgentState(TypedDict):
 class CodeGraphAgent:
     """Intelligent agent that orchestrates code analysis tools to answer user questions."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the agent."""
         self.workflow = self._create_workflow()
 
@@ -44,7 +44,8 @@ class CodeGraphAgent:
         workflow.add_edge("execute_tools", "generate_response")
         workflow.add_edge("generate_response", END)
 
-        return workflow.compile()
+        compiled_workflow = workflow.compile()
+        return compiled_workflow
 
     async def _understand_query(self, state: AgentState) -> AgentState:
         """Understand the user query and select appropriate tools."""
@@ -297,7 +298,9 @@ class CodeGraphAgent:
                 "reasoning": [{"step": "workflow_error", "description": str(e)}],
             }
 
-    async def stream_query(self, user_query: str):
+    async def stream_query(
+        self, user_query: str
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream agent workflow events for a user query as an async generator.
 
         Yields structured events that the UI can render in real-time.

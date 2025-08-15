@@ -15,14 +15,14 @@ logger = logging.getLogger(__name__)
 class Neo4jDatabase:
     """Neo4j database connection and query manager."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize database connection."""
-        self.driver = None
+        self.driver: Optional[Any] = None
         self.last_metrics: Optional[Dict[str, Any]] = None
         self._lock = threading.Lock()
         self._connect()
 
-    def _connect(self):
+    def _connect(self) -> None:
         """Establish connection to Neo4j."""
         with self._lock:
             try:
@@ -101,7 +101,11 @@ class Neo4jDatabase:
                 return False
             with self.driver.session(database=settings.neo4j_database) as session:
                 result = session.run("RETURN 1 as test")
-                return result.single()["test"] == 1
+                record = result.single()
+                if record is None:
+                    return False
+                test_value = record.get("test")
+                return bool(test_value == 1)
         except Exception:
             # On failure, mark driver unusable to allow future reconnects
             try:
@@ -126,7 +130,7 @@ class Neo4jDatabase:
             logger.warning(f"Could not get schema info: {e}")
             return {"nodes": [], "relationships": []}
 
-    def close(self):
+    def close(self) -> None:
         """Close database connection."""
         if self.driver:
             self.driver.close()
