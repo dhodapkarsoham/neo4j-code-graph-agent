@@ -34,7 +34,7 @@ install_deps() {
     log_info "Installing dependencies..."
     pip install --upgrade pip
     pip install -r requirements.txt
-    pip install -r ci/config/requirements-dev.txt
+    pip install -r requirements-dev.txt
     log_success "Dependencies installed"
 }
 
