@@ -32,7 +32,9 @@ class Neo4jDatabase:
                 )
                 # Test connection
                 with self.driver.session(database=settings.neo4j_database) as session:
-                    session.run("RETURN 1")
+                    def test_connection(tx):
+                        tx.run("RETURN 1")
+                    session.execute_read(test_connection)
                 logger.info("✅ Connected to Neo4j database")
             except Exception as e:
                 logger.error("❌ Failed to connect to Neo4j: %s", str(e))
@@ -50,22 +52,26 @@ class Neo4jDatabase:
         if not self.driver:
             raise ConnectionError("Not connected to Neo4j database")
 
+        def run_query(tx):
+            result = tx.run(query, parameters or {})
+            records = [dict(record) for record in result]
+            # Try to consume summary for timing metrics if available
+            available_after_ms = None
+            consumed_after_ms = None
+            try:
+                summary = result.consume()
+                available_after_ms = getattr(
+                    summary, "result_available_after", None
+                )
+                consumed_after_ms = getattr(summary, "result_consumed_after", None)
+            except Exception:
+                pass
+            return records, available_after_ms, consumed_after_ms
+
         try:
             with self.driver.session(database=settings.neo4j_database) as session:
                 start_time = time.perf_counter()
-                result = session.run(query, parameters or {})
-                records = [dict(record) for record in result]
-                # Try to consume summary for timing metrics if available
-                available_after_ms = None
-                consumed_after_ms = None
-                try:
-                    summary = result.consume()
-                    available_after_ms = getattr(
-                        summary, "result_available_after", None
-                    )
-                    consumed_after_ms = getattr(summary, "result_consumed_after", None)
-                except Exception:
-                    pass
+                records, available_after_ms, consumed_after_ms = session.execute_read(run_query)
                 latency_ms = (time.perf_counter() - start_time) * 1000.0
                 # Store metrics for callers
                 self.last_metrics = {
@@ -100,12 +106,14 @@ class Neo4jDatabase:
             if self.driver is None:
                 return False
             with self.driver.session(database=settings.neo4j_database) as session:
-                result = session.run("RETURN 1 as test")
-                record = result.single()
-                if record is None:
-                    return False
-                test_value = record.get("test")
-                return bool(test_value == 1)
+                def test_query(tx):
+                    result = tx.run("RETURN 1 as test")
+                    record = result.single()
+                    if record is None:
+                        return False
+                    test_value = record.get("test")
+                    return bool(test_value == 1)
+                return session.execute_read(test_query)
         except Exception:
             # On failure, mark driver unusable to allow future reconnects
             try:
