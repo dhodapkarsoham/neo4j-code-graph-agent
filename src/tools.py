@@ -4,7 +4,9 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
+from datetime import datetime, timedelta
+import asyncio
 
 from src.database import db
 
@@ -270,8 +272,8 @@ class ToolRegistry:
         if not llm_client.is_configured():
             raise RuntimeError("LLM client not configured - cannot generate Cypher queries")
         
-        # Define the database schema information
-        schema_info = self._get_database_schema_context()
+        # Define the database schema information (lazy loaded and cached)
+        schema_info = await self._get_database_schema_context()
         
         system_prompt = f"""You are an expert Neo4j Cypher query generator for a code analysis graph database.
 
@@ -292,6 +294,8 @@ GUIDELINES:
 
 EXAMPLE PATTERNS:
 - Finding vulnerabilities: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(f:File)
+- CVEs affecting specific dependency: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency) WHERE dep.name = 'dependency.name'
+- High severity CVEs: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency) WHERE cve.cvss_score >= 7.0
 - Developer activity: MATCH (dev:Developer)-[:AUTHORED]->(commit:Commit)
 - Complex methods: MATCH (m:Method) WHERE m.estimated_lines > 50
 - File dependencies: MATCH (f:File)-[:DEPENDS_ON]->(dep:ExternalDependency)
@@ -382,99 +386,62 @@ Be precise with property names and relationship directions. Always test your und
         
         return None
     
-    def _get_database_schema_context(self) -> str:
-        """Get database schema context for LLM prompt by querying the database."""
+    async def _get_database_schema_context(self) -> str:
+        """Get database schema context for LLM prompt using lazy loading and caching."""
+        return await schema_cache_manager.get_schema()
+    
+    def _get_database_schema_context_sync(self) -> str:
+        """Synchronous version for backward compatibility."""
+        import asyncio
         try:
-            from src.database import db
-            
-            schema_context = "DATABASE SCHEMA:\n\n"
-            
-            # Get node labels
-            schema_context += "NODE LABELS:\n"
-            try:
-                labels_result = db.execute_query("CALL db.labels() YIELD label RETURN label ORDER BY label")
-                for row in labels_result:
-                    schema_context += f"- {row['label']}\n"
-            except Exception as e:
-                logger.warning(f"Could not fetch node labels: {e}")
-                schema_context += "- Error fetching node labels\n"
-            
-            schema_context += "\n"
-            
-            # Get relationship types
-            schema_context += "RELATIONSHIP TYPES:\n"
-            try:
-                rels_result = db.execute_query("CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType")
-                for row in rels_result:
-                    schema_context += f"- {row['relationshipType']}\n"
-            except Exception as e:
-                logger.warning(f"Could not fetch relationship types: {e}")
-                schema_context += "- Error fetching relationship types\n"
-            
-            schema_context += "\n"
-            
-            # Get sample relationships for each type
-            schema_context += "RELATIONSHIP PATTERNS:\n"
-            try:
-                rels_result = db.execute_query("CALL db.relationshipTypes() YIELD relationshipType")
-                for row in rels_result:
-                    rel_type = row['relationshipType']
-                    try:
-                        sample = db.execute_query(f"MATCH ()-[r:{rel_type}]->() RETURN type(r), startNode(r), endNode(r) LIMIT 1")
-                        if sample:
-                            start_labels = list(sample[0]['startNode(r)'].labels)
-                            end_labels = list(sample[0]['endNode(r)'].labels)
-                            schema_context += f"- ({start_labels}) -[:{rel_type}]-> ({end_labels})\n"
-                    except Exception as e:
-                        schema_context += f"- {rel_type}: Error getting pattern\n"
-            except Exception as e:
-                logger.warning(f"Could not fetch relationship patterns: {e}")
-                schema_context += "- Error fetching relationship patterns\n"
-            
-            schema_context += "\n"
-            
-            # Get properties for each node type
-            schema_context += "NODE PROPERTIES:\n"
-            try:
-                labels_result = db.execute_query("CALL db.labels() YIELD label")
-                for row in labels_result:
-                    label = row['label']
-                    try:
-                        props = db.execute_query(f"MATCH (n:{label}) RETURN keys(n) as properties LIMIT 1")
-                        if props:
-                            properties = props[0]['properties']
-                            schema_context += f"{label}:\n"
-                            for prop in sorted(properties):
-                                schema_context += f"  - {prop}\n"
-                    except Exception as e:
-                        schema_context += f"{label}: Error getting properties\n"
-            except Exception as e:
-                logger.warning(f"Could not fetch node properties: {e}")
-                schema_context += "- Error fetching node properties\n"
-            
-            # Add common query patterns and examples
-            schema_context += "\nCOMMON QUERY PATTERNS:\n"
-            schema_context += "1. Security Analysis: CVE-AFFECTS->ExternalDependency<-DEPENDS_ON-Import<-IMPORTS-File\n"
-            schema_context += "2. Code Complexity: Method.estimated_lines, File.total_lines\n"
-            schema_context += "3. Developer Activity: Developer-AUTHORED->Commit-CHANGED->FileVer-OF_FILE->File\n"
-            schema_context += "4. Architecture Analysis: Method.pagerank_score, betweenness_score\n"
-            schema_context += "5. Method Calls: Method-CALLS->Method\n"
-            schema_context += "6. Class Hierarchy: Class-EXTENDS/IMPLEMENTS->Class/Interface\n"
-            schema_context += "7. Class-Method Relationship: Class-CONTAINS_METHOD->Method\n"
-            schema_context += "8. File-Class-Method: File-DEFINES->Class-CONTAINS_METHOD->Method\n"
-            
-            schema_context += "\nEXAMPLE QUERIES:\n"
-            schema_context += "- Find vulnerable files: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(imp:Import)<-[:IMPORTS]-(f:File) WHERE cve.cvss_score >= 7.0 RETURN f.path, cve.id\n"
-            schema_context += "- Complex methods: MATCH (m:Method)<-[:DECLARES]-(f:File) WHERE m.estimated_lines > 50 RETURN f.path, m.name, m.estimated_lines\n"
-            schema_context += "- Developer activity: MATCH (dev:Developer)-[:AUTHORED]->(c:Commit) RETURN dev.name, count(c) as commits ORDER BY commits DESC\n"
-            schema_context += "- Methods in class: MATCH (c:Class {name: 'ClassName'})-[:CONTAINS_METHOD]->(m:Method) RETURN m.name, m.line\n"
-            schema_context += "- Methods in file: MATCH (f:File)-[:DECLARES]->(m:Method) WHERE f.path CONTAINS 'path/to/file' RETURN m.name, m.line\n"
-            
-            return schema_context
-            
-        except Exception as e:
-            logger.error(f"Error getting database schema context: {e}")
-            raise Exception(f"Failed to get database schema: {e}. Please ensure the database is accessible and contains the required schema.")
+            # Try to get the event loop
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're in an async context, we need to handle this differently
+                logger.warning("Called sync schema method from async context - using fallback")
+                # Return a basic schema for backward compatibility
+                return """
+DATABASE SCHEMA (FALLBACK - Use async version for full schema):
+
+NODE LABELS:
+- Class, File, Method, Interface, ExternalDependency, CVE, Developer, Commit, FileVer, Import, Directory
+
+RELATIONSHIP TYPES:
+- DEFINES, DECLARES, CONTAINS_METHOD, CALLS, EXTENDS, IMPLEMENTS, DEPENDS_ON, IMPORTS, AUTHORED, CHANGED, OF_FILE, AFFECTS, CONTAINS
+
+COMMON QUERY PATTERNS:
+1. Security Analysis: CVE-AFFECTS->ExternalDependency<-DEPENDS_ON-Import<-IMPORTS-File
+2. Code Complexity: Method.estimated_lines, File.total_lines
+3. Developer Activity: Developer-AUTHORED->Commit-CHANGED->FileVer-OF_FILE->File
+
+EXAMPLE QUERIES:
+- Find vulnerable files: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(imp:Import)<-[:IMPORTS]-(f:File) WHERE cve.cvss_score >= 7.0 RETURN f.path, cve.id
+- Complex methods: MATCH (m:Method)<-[:DECLARES]-(f:File) WHERE m.estimated_lines > 50 RETURN f.path, m.name, m.estimated_lines
+"""
+            else:
+                # If no event loop is running, we can run the async function
+                return loop.run_until_complete(schema_cache_manager.get_schema())
+        except RuntimeError:
+            # No event loop available, use fallback
+            logger.warning("No event loop available for schema loading - using fallback")
+            return """
+DATABASE SCHEMA (FALLBACK - Use async version for full schema):
+
+NODE LABELS:
+- Class, File, Method, Interface, ExternalDependency, CVE, Developer, Commit, FileVer, Import, Directory
+
+RELATIONSHIP TYPES:
+- DEFINES, DECLARES, CONTAINS_METHOD, CALLS, EXTENDS, IMPLEMENTS, DEPENDS_ON, IMPORTS, AUTHORED, CHANGED, OF_FILE, AFFECTS, CONTAINS
+
+COMMON QUERY PATTERNS:
+1. Security Analysis: CVE-AFFECTS->ExternalDependency<-DEPENDS_ON-Import<-IMPORTS-File
+2. Code Complexity: Method.estimated_lines, File.total_lines
+3. Developer Activity: Developer-AUTHORED->Commit-CHANGED->FileVer-OF_FILE->File
+
+EXAMPLE QUERIES:
+- Find vulnerable files: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(imp:Import)<-[:IMPORTS]-(f:File) WHERE cve.cvss_score >= 7.0 RETURN f.path, cve.id
+- Complex methods: MATCH (m:Method)<-[:DECLARES]-(f:File) WHERE m.estimated_lines > 50 RETURN f.path, m.name, m.estimated_lines
+"""
 
     def list_tools(self) -> List[Dict[str, Any]]:
         """List all available tools."""
@@ -503,3 +470,213 @@ Be precise with property names and relationship directions. Always test your und
 
 # Global tool registry
 tool_registry = ToolRegistry()
+
+
+@dataclass
+class SchemaCache:
+    """Schema cache entry with TTL."""
+    schema: str
+    created_at: datetime
+    ttl_seconds: int = 300  # 5 minutes default
+    
+    def is_expired(self) -> bool:
+        """Check if cache entry has expired."""
+        return datetime.now() > self.created_at + timedelta(seconds=self.ttl_seconds)
+    
+    def time_until_expiry(self) -> float:
+        """Get seconds until cache expires."""
+        expiry_time = self.created_at + timedelta(seconds=self.ttl_seconds)
+        return (expiry_time - datetime.now()).total_seconds()
+
+class SchemaCacheManager:
+    """Manages lazy loading and caching of database schema."""
+    
+    def __init__(self, ttl_seconds: int = 300):
+        self.ttl_seconds = ttl_seconds
+        self._cache: Optional[SchemaCache] = None
+        self._loading_lock = asyncio.Lock()
+        self._last_load_attempt: Optional[datetime] = None
+        self._load_attempt_interval = 60  # Don't retry loading more than once per minute
+    
+    async def get_schema(self) -> str:
+        """Get schema with lazy loading and caching."""
+        # Check if we have a valid cache
+        if self._cache and not self._cache.is_expired():
+            logger.debug(f"Using cached schema (expires in {self._cache.time_until_expiry():.1f}s)")
+            return self._cache.schema
+        
+        # Check if we should attempt to load (rate limiting)
+        if self._last_load_attempt:
+            time_since_last = (datetime.now() - self._last_load_attempt).total_seconds()
+            if time_since_last < self._load_attempt_interval:
+                if self._cache:
+                    logger.warning(f"Using expired cache due to rate limiting (last attempt {time_since_last:.1f}s ago)")
+                    return self._cache.schema
+                else:
+                    # Reset the last load attempt to allow retry
+                    self._last_load_attempt = None
+        
+        # Load schema with lock to prevent concurrent loads
+        async with self._loading_lock:
+            # Double-check cache after acquiring lock
+            if self._cache and not self._cache.is_expired():
+                return self._cache.schema
+            
+            logger.info("Loading database schema (lazy load)")
+            self._last_load_attempt = datetime.now()
+            
+            try:
+                schema = await self._fetch_schema_from_database()
+                self._cache = SchemaCache(
+                    schema=schema,
+                    created_at=datetime.now(),
+                    ttl_seconds=self.ttl_seconds
+                )
+                logger.info(f"Schema loaded successfully (cached for {self.ttl_seconds}s)")
+                return schema
+                
+            except Exception as e:
+                logger.error(f"Failed to load schema: {e}")
+                if self._cache:
+                    logger.warning("Using expired cache due to load failure")
+                    return self._cache.schema
+                else:
+                    raise Exception(f"Failed to load schema and no cache available: {e}")
+    
+    async def _fetch_schema_from_database(self) -> str:
+        """Fetch schema from database with optimized queries."""
+        from src.database import db
+        
+        schema_context = "DATABASE SCHEMA:\n\n"
+        
+        # Get node labels (single query)
+        schema_context += "NODE LABELS:\n"
+        try:
+            labels_result = db.execute_query("CALL db.labels() YIELD label RETURN label ORDER BY label")
+            for row in labels_result:
+                schema_context += f"- {row['label']}\n"
+        except Exception as e:
+            logger.warning(f"Could not fetch node labels: {e}")
+            schema_context += "- Error fetching node labels\n"
+        
+        schema_context += "\n"
+        
+        # Get relationship types (single query)
+        schema_context += "RELATIONSHIP TYPES:\n"
+        try:
+            rels_result = db.execute_query("CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType")
+            for row in rels_result:
+                schema_context += f"- {row['relationshipType']}\n"
+        except Exception as e:
+            logger.warning(f"Could not fetch relationship types: {e}")
+            schema_context += "- Error fetching relationship types\n"
+        
+        schema_context += "\n"
+        
+        # Get relationship patterns (optimized - single query with aggregation)
+        schema_context += "RELATIONSHIP PATTERNS:\n"
+        try:
+            # Use a more efficient query to get relationship patterns
+            pattern_query = """
+            CALL db.relationshipTypes() YIELD relationshipType
+            MATCH ()-[r]->() 
+            WHERE type(r) = relationshipType
+            RETURN relationshipType, 
+                   labels(startNode(r)) as startLabels, 
+                   labels(endNode(r)) as endLabels
+            LIMIT 1
+            """
+            patterns_result = db.execute_query(pattern_query)
+            for row in patterns_result:
+                rel_type = row['relationshipType']
+                start_labels = row['startLabels']
+                end_labels = row['endLabels']
+                schema_context += f"- ({start_labels}) -[:{rel_type}]-> ({end_labels})\n"
+        except Exception as e:
+            logger.warning(f"Could not fetch relationship patterns: {e}")
+            schema_context += "- Error fetching relationship patterns\n"
+        
+        schema_context += "\n"
+        
+        # Get node properties (simplified approach)
+        schema_context += "NODE PROPERTIES:\n"
+        try:
+            # Get properties for each label individually to avoid complex queries
+            labels_result = db.execute_query("CALL db.labels() YIELD label")
+            for row in labels_result:
+                label_name = row['label']
+                try:
+                    # Simple query to get properties for this label
+                    props = db.execute_query(f"MATCH (n:{label_name}) RETURN keys(n) as properties LIMIT 1")
+                    if props and props[0]['properties']:
+                        schema_context += f"{label_name}:\n"
+                        properties = props[0]['properties']
+                        for prop in sorted(properties):
+                            schema_context += f"  - {prop}\n"
+                except Exception as e:
+                    schema_context += f"{label_name}: Error getting properties\n"
+        except Exception as e:
+            logger.warning(f"Could not fetch node properties: {e}")
+            schema_context += "- Error fetching node properties\n"
+        
+        # Add common query patterns and examples
+        schema_context += "\nCOMMON QUERY PATTERNS:\n"
+        schema_context += "1. Security Analysis: CVE-AFFECTS->ExternalDependency<-DEPENDS_ON-Import<-IMPORTS-File\n"
+        schema_context += "2. Code Complexity: Method.estimated_lines, File.total_lines\n"
+        schema_context += "3. Developer Activity: Developer-AUTHORED->Commit-CHANGED->FileVer-OF_FILE->File\n"
+        schema_context += "4. Architecture Analysis: Method.pagerank_score, betweenness_score\n"
+        schema_context += "5. Method Calls: Method-CALLS->Method\n"
+        schema_context += "6. Class Hierarchy: Class-EXTENDS/IMPLEMENTS->Class/Interface\n"
+        schema_context += "7. Class-Method Relationship: Class-CONTAINS_METHOD->Method\n"
+        schema_context += "8. File-Class-Method: File-DEFINES->Class-CONTAINS_METHOD->Method\n"
+        
+        schema_context += "\nEXAMPLE QUERIES:\n"
+        schema_context += "- Find vulnerable files: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(imp:Import)<-[:IMPORTS]-(f:File) WHERE cve.cvss_score >= 7.0 RETURN f.path, cve.id\n"
+        schema_context += "- CVEs affecting specific dependency: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency) WHERE dep.name = 'dependency.name' AND cve.cvss_score >= 7.0 RETURN cve.id, cve.description, cve.cvss_score\n"
+        schema_context += "- High severity CVEs for dependency: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency) WHERE dep.name = 'apoc.create.Create' AND cve.cvss_score >= 7.0 RETURN cve.id, cve.description, cve.cvss_score\n"
+        schema_context += "- Complex methods: MATCH (m:Method)<-[:DECLARES]-(f:File) WHERE m.estimated_lines > 50 RETURN f.path, m.name, m.estimated_lines\n"
+        schema_context += "- Developer activity: MATCH (dev:Developer)-[:AUTHORED]->(c:Commit) RETURN dev.name, count(c) as commits ORDER BY commits DESC\n"
+        schema_context += "- Methods in class: MATCH (c:Class {name: 'ClassName'})-[:CONTAINS_METHOD]->(m:Method) RETURN m.name, m.line\n"
+        schema_context += "- Methods in file: MATCH (f:File)-[:DECLARES]->(m:Method) WHERE f.path CONTAINS 'path/to/file' RETURN m.name, m.line\n"
+        
+        return schema_context
+    
+    def invalidate_cache(self):
+        """Invalidate the current cache."""
+        self._cache = None
+        logger.info("Schema cache invalidated")
+    
+    def get_cache_status(self) -> Dict[str, Any]:
+        """Get cache status for debugging."""
+        if not self._cache:
+            return {"status": "no_cache", "message": "No schema cached"}
+        
+        return {
+            "status": "expired" if self._cache.is_expired() else "valid",
+            "created_at": self._cache.created_at.isoformat(),
+            "ttl_seconds": self._cache.ttl_seconds,
+            "time_until_expiry": self._cache.time_until_expiry(),
+            "schema_length": len(self._cache.schema)
+        }
+    
+    async def preload_schema(self):
+        """Preload schema on startup for better performance."""
+        logger.info("Preloading database schema for better performance...")
+        try:
+            await self.get_schema()
+            logger.info("Schema preloaded successfully")
+        except Exception as e:
+            logger.warning(f"Failed to preload schema: {e}")
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics."""
+        status = self.get_cache_status()
+        return {
+            **status,
+            "cache_hit_rate": "N/A",  # Could be implemented with counters
+            "load_attempts": "N/A",   # Could be implemented with counters
+            "last_load_attempt": self._last_load_attempt.isoformat() if self._last_load_attempt else None
+        }
+
+# Global schema cache manager
+schema_cache_manager = SchemaCacheManager(ttl_seconds=300)  # 5 minutes TTL

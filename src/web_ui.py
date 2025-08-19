@@ -25,6 +25,15 @@ app = FastAPI(title="Code Graph Agent", version="1.0.0")
 # Mount static files
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 
+@app.on_event("startup")
+async def startup_event():
+    """Preload schema on startup for better performance."""
+    try:
+        from src.tools import schema_cache_manager
+        await schema_cache_manager.preload_schema()
+    except Exception as e:
+        logger.warning(f"Failed to preload schema on startup: {e}")
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -1708,9 +1717,9 @@ async def text2cypher_direct(request: Request) -> Dict[str, Any]:
         if not user_question:
             raise HTTPException(status_code=400, detail="Question is required")
         
-        # Get dynamic schema from tools module
+        # Get dynamic schema from tools module (lazy loaded and cached)
         from src.tools import tool_registry
-        schema_info = tool_registry._get_database_schema_context()
+        schema_info = await tool_registry._get_database_schema_context()
         
         # Try to use LLM if available
         try:
