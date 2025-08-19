@@ -5,7 +5,6 @@ websockets>=11.0.0,<12.0.0
 
 # LangGraph for agent workflows
 langgraph>=0.2.0
-langchain-core>=0.3.0
 
 # Azure OpenAI and AI libraries
 openai>=1.3.0,<2.0.0
