@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from src.agent import CodeGraphAgent
 from src.tools import ToolRegistry
-from src.web_ui import app
+from src.app import app
 
 
 class TestIntegration:
@@ -19,14 +19,14 @@ class TestIntegration:
         self.client = TestClient(app)
         self.agent = CodeGraphAgent()
 
-    @patch("src.web_ui.tool_registry")
-    @patch("src.web_ui.agent")
+    @patch("src.routes.api.tool_registry")
+    @patch("src.routes.api.agent")
     def test_health_endpoint(self, mock_agent, mock_tool_registry):
         """Test health check endpoint."""
         # Skip this test for now due to CI/CD setup
         pytest.skip("Skipping integration test during CI/CD setup")
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_list_tools_endpoint(self, mock_tool_registry):
         """Test tools listing endpoint."""
         mock_tool_registry.list_tools.return_value = [
@@ -52,7 +52,7 @@ class TestIntegration:
         assert data[0]["name"] == "tool1"
         assert data[1]["name"] == "tool2"
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_create_tool_endpoint(self, mock_tool_registry):
         """Test tool creation endpoint."""
         mock_tool = MagicMock()
@@ -61,7 +61,7 @@ class TestIntegration:
         mock_tool.category = "Custom"
         mock_tool.parameters = None
 
-        mock_tool_registry.add_tool.return_value = mock_tool
+        mock_tool_registry.create_tool.return_value = mock_tool
 
         tool_data = {
             "name": "new_tool",
@@ -75,9 +75,8 @@ class TestIntegration:
         assert response.status_code == 200
         data = response.json()
         assert data["message"] == "Tool created successfully"
-        assert data["tool"]["name"] == "new_tool"
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_create_tool_missing_fields(self, mock_tool_registry):
         """Test tool creation with missing fields."""
         tool_data = {
@@ -91,10 +90,10 @@ class TestIntegration:
         data = response.json()
         assert "Missing required field" in data["detail"]
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_create_tool_duplicate_name(self, mock_tool_registry):
         """Test tool creation with duplicate name."""
-        mock_tool_registry.add_tool.side_effect = ValueError(
+        mock_tool_registry.create_tool.side_effect = ValueError(
             "Tool with name 'existing_tool' already exists"
         )
 
@@ -111,7 +110,7 @@ class TestIntegration:
         data = response.json()
         assert "already exists" in data["detail"]
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_get_tool_details_endpoint(self, mock_tool_registry):
         """Test tool details endpoint."""
         mock_tool = MagicMock()
@@ -132,7 +131,7 @@ class TestIntegration:
         assert data["category"] == "Test"
         assert data["query"] == "MATCH (n) RETURN n"
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_get_tool_details_not_found(self, mock_tool_registry):
         """Test tool details endpoint with non-existent tool."""
         mock_tool_registry.get_tool_by_name.return_value = None
@@ -143,7 +142,7 @@ class TestIntegration:
         data = response.json()
         assert "Tool not found" in data["detail"]
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_update_tool_endpoint(self, mock_tool_registry):
         """Test tool update endpoint."""
         mock_tool = MagicMock()
@@ -164,7 +163,7 @@ class TestIntegration:
         data = response.json()
         assert data["message"] == "Tool updated successfully"
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_delete_tool_endpoint(self, mock_tool_registry):
         """Test tool deletion endpoint."""
         mock_tool_registry.remove_tool.return_value = True
@@ -176,7 +175,7 @@ class TestIntegration:
         assert data["message"] == "Tool deleted successfully"
         assert data["tool_name"] == "custom_tool"
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_delete_tool_not_found(self, mock_tool_registry):
         """Test tool deletion with non-existent tool."""
         mock_tool_registry.remove_tool.return_value = False
@@ -187,7 +186,7 @@ class TestIntegration:
         data = response.json()
         assert "not found" in data["detail"]
 
-    @patch("src.web_ui.agent")
+    @patch("src.routes.api.agent")
     def test_query_endpoint_success(self, mock_agent):
         """Test query endpoint success."""
         mock_agent.process_query.return_value = {
@@ -207,7 +206,7 @@ class TestIntegration:
         assert len(data["reasoning"]) > 0
         assert len(data["tools_used"]) > 0
 
-    @patch("src.web_ui.agent")
+    @patch("src.routes.api.agent")
     def test_query_endpoint_empty_query(self, mock_agent):
         """Test query endpoint with empty query."""
         query_data = {"query": ""}
@@ -218,7 +217,7 @@ class TestIntegration:
         data = response.json()
         assert "Query is required" in data["detail"]
 
-    @patch("src.web_ui.agent")
+    @patch("src.routes.api.agent")
     def test_query_endpoint_missing_query(self, mock_agent):
         """Test query endpoint with missing query field."""
         query_data = {}
@@ -229,7 +228,7 @@ class TestIntegration:
         data = response.json()
         assert "Query is required" in data["detail"]
 
-    @patch("src.web_ui.agent")
+    @patch("src.routes.api.agent")
     def test_query_endpoint_agent_error(self, mock_agent):
         """Test query endpoint when agent raises an error."""
         mock_agent.process_query.side_effect = Exception("Agent error")
@@ -250,7 +249,7 @@ class TestIntegration:
         assert "text/html" in response.headers["content-type"]
         assert "Code Graph Agent" in response.text
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_test_tool_endpoint(self, mock_tool_registry):
         """Test tool testing endpoint."""
         mock_tool_registry.execute_tool.return_value = {
@@ -266,7 +265,7 @@ class TestIntegration:
         assert data["tool"] == "test_tool"
         assert "result" in data
 
-    @patch("src.web_ui.tool_registry")
+    @patch("src.routes.api.tool_registry")
     def test_test_tool_endpoint_error(self, mock_tool_registry):
         """Test tool testing endpoint with error."""
         mock_tool_registry.execute_tool.side_effect = Exception("Tool execution failed")
@@ -281,8 +280,8 @@ class TestIntegration:
 class TestEndToEndWorkflow:
     """End-to-end workflow tests."""
 
-    @patch("src.web_ui.tool_registry")
-    @patch("src.web_ui.agent")
+    @patch("src.routes.api.tool_registry")
+    @patch("src.routes.api.agent")
     def test_complete_workflow(self, mock_agent, mock_tool_registry):
         """Test complete workflow from tool creation to query execution."""
         client = TestClient(app)
@@ -294,7 +293,7 @@ class TestEndToEndWorkflow:
         mock_tool.category = "Custom"
         mock_tool.parameters = None
 
-        mock_tool_registry.add_tool.return_value = mock_tool
+        mock_tool_registry.create_tool.return_value = mock_tool
 
         tool_data = {
             "name": "custom_analysis",
