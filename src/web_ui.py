@@ -714,7 +714,44 @@ async def get_ui() -> HTMLResponse:
                 try {
                     if (window.marked && window.DOMPurify) {
                         const html = window.marked.parse(content || '');
-                        return window.DOMPurify.sanitize(html);
+                        const sanitized = window.DOMPurify.sanitize(html);
+                        
+                        // Add CSS styling for tables to make them scrollable
+                        let enhancedHtml = sanitized.replace(
+                            /<table>/g,
+                            '<div style="max-height: 400px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px;"><table style="width: 100%; border-collapse: collapse;">'
+                        ).replace(
+                            /<\/table>/g,
+                            '</table></div>'
+                        ).replace(
+                            /<thead>/g,
+                            '<thead style="background-color: #f9fafb; position: sticky; top: 0; z-index: 10;">'
+                        ).replace(
+                            /<th>/g,
+                            '<th style="padding: 10px 12px; text-align: left; font-size: 14px; font-weight: 600; text-transform: uppercase; color: #6b7280; border-bottom: 1px solid #e5e7eb;">'
+                        ).replace(
+                            /<td>/g,
+                            '<td style="padding: 10px 12px; font-size: 14px; color: #111827; border-bottom: 1px solid #e5e7eb;">'
+                        );
+                        
+                        // Add scroll indicator for tables with many rows
+                        enhancedHtml = enhancedHtml.replace(
+                            /(<\/table><\/div>)/g,
+                            (match, p1) => {
+                                // Count table rows to determine if we need a scroll indicator
+                                const tableMatch = match.match(/<tr>/g);
+                                const rowCount = tableMatch ? tableMatch.length - 1 : 0; // Subtract 1 for header row
+                                
+                                if (rowCount > 10) {
+                                    return p1 + `<div style="text-align: center; padding: 10px; font-size: 14px; color: #6b7280; background-color: #f9fafb; border-top: 1px solid #e5e7eb;">📜 Scroll to see all ${rowCount} results</div>`;
+                                }
+                                return p1;
+                            }
+                        );
+                        
+
+                        
+                        return enhancedHtml;
                     }
                 } catch (e) {}
                 // Fallback minimal formatting
@@ -756,27 +793,29 @@ async def get_ui() -> HTMLResponse:
                     // Special display for text2cypher results
                     if (step.tool_name === 'text2cypher' && step.generated_query) {
                         stepHtml += `
-                            <div class="mt-3 p-3 rounded-lg border" style="background: rgba(240, 249, 255, 0.8); border-color: rgba(10, 97, 144, 0.2);">
-                                <div class="text-sm font-semibold mb-2" style="color: #0A6190;">🔍 Generated Cypher Query:</div>
-                                <pre class="text-xs p-2 bg-gray-100 rounded overflow-x-auto" style="color: #1f2937;">${step.generated_query}</pre>
-                                ${step.explanation ? `
-                                    <div class="text-sm mt-2" style="color: #374151;">
-                                        <strong>💡 Explanation:</strong> ${step.explanation}
+                            <div class="mt-3">
+                                <details class="rounded-lg border border-gray-200 bg-white">
+                                    <summary class="cursor-pointer p-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-blue-600">🔍</span>
+                                            <span class="font-medium text-gray-900">Generated Cypher Query</span>
+                                        </div>
+                                        <span class="text-xs text-gray-500">Click to view</span>
+                                    </summary>
+                                    <div class="border-t border-gray-200 p-3 bg-gray-50">
+                                        <pre class="text-sm p-3 bg-white rounded border overflow-x-auto font-mono text-gray-800">${step.generated_query}</pre>
                                     </div>
-                                ` : ''}
-                                ${step.results && step.results.length > 0 ? `
-                                    <div class="text-sm mt-2" style="color: #374151;">
-                                        <strong>📊 Results (${step.results.length}):</strong>
-                                        <div class="mt-1 space-y-1">
-                                            ${step.results.map((result, idx) => {
-                                                const formatted = Object.entries(result)
-                                                    .map(([k, v]) => `${k}: ${v}`)
-                                                    .join(', ');
-                                                return `<div class="text-xs p-1 bg-white rounded border">${idx + 1}. ${formatted}</div>`;
-                                            }).join('')}
+                                </details>
+                                
+                                ${step.explanation ? `
+                                    <div class="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                        <div class="text-sm text-gray-700">
+                                            <span class="font-medium text-blue-800">💡 Explanation:</span> ${step.explanation}
                                         </div>
                                     </div>
                                 ` : ''}
+                                
+
                             </div>
                         `;
                     }
@@ -995,6 +1034,8 @@ async def get_ui() -> HTMLResponse:
                         </div>
                     </div>
 
+
+
                     {/* Slim offline banner */}
                     {neo4jStatus === false && (
                         <div className="w-full bg-red-50 text-red-700 text-sm border-b border-red-200 transition-opacity duration-200 ease-out">
@@ -1039,16 +1080,25 @@ async def get_ui() -> HTMLResponse:
                             <div className="space-y-8">
                                 {/* Query Interface */}
                                 <div className="glass-effect p-8 rounded-3xl shadow-xl border-2 border-blue-100">
-                                    <h2 className="text-3xl font-bold mb-6 text-gray-800">Ask Your Code Graph Questions</h2>
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h2 className="text-3xl font-bold text-gray-800">Ask Your Code Graph Questions</h2>
+                                        <div className="flex items-center space-x-2">
+                                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                                                🔍 Text2Cypher Ready
+                                            </span>
+                                        </div>
+                                    </div>
                                     <div className="space-y-4">
                                         <textarea
                                             value={query}
                                             onChange={(e) => setQuery(e.target.value)}
-                                            placeholder="Ask about code dependencies, security vulnerabilities, team collaboration, architecture patterns, or any code-related questions..."
+                                            placeholder="💡 Ask questions in natural language: 'What HIGH severity CVEs affect apoc.create.Create?' or 'Find methods with more than 100 lines' or 'Who worked on the authentication module?'"
                                             className="w-full p-6 border-2 border-gray-200 rounded-2xl text-lg resize-none focus:border-blue-500 focus:outline-none"
                                             rows="5"
                                             onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendQuery()}
                                         />
+                                        
+                                        
                                         <div className="flex space-x-3">
                                             <button
                                                 onClick={sendQuery}
@@ -1220,6 +1270,21 @@ async def get_ui() -> HTMLResponse:
                                         <div className="text-3xl font-bold text-gray-600">{getToolsByCategory('Custom').length}</div>
                                         <div className="text-base text-gray-600">Custom Tools</div>
                                     </div>
+                                </div>
+
+                                {/* Text2Cypher Info */}
+                                <div className="glass-effect p-6 rounded-2xl shadow-lg border border-blue-100">
+                                    <div className="flex items-center space-x-3 mb-3">
+                                        <span className="text-2xl">🔍</span>
+                                        <h3 className="text-xl font-semibold text-gray-800">Natural Language to Cypher</h3>
+                                    </div>
+                                    <p className="text-gray-600 mb-4">Ask questions in plain English and get instant Cypher query results. Perfect for specific queries about dependencies, files, classes, methods, and more.</p>
+                                    <button
+                                        onClick={() => setActiveTab('query')}
+                                        className="bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
+                                    >
+                                        Try Text2Cypher
+                                    </button>
                                 </div>
 
                                 {/* Create Tool Button */}

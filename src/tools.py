@@ -284,13 +284,14 @@ TASK: Convert the user's natural language question into a valid Cypher query.
 
 GUIDELINES:
 1. Use ONLY the node labels, properties, and relationships shown in the schema above
-2. Always include LIMIT clauses (typically 25-50) to prevent huge result sets
+2. Use LIMIT clauses (typically 50-100) for large result sets, but allow more results for specific queries
 3. Use DISTINCT to avoid duplicate results
 4. Use proper Cypher syntax with correct WHERE clauses and aggregations
 5. For complex questions, break them down into logical graph patterns
 6. Include relevant properties in the RETURN clause
 7. Use OPTIONAL MATCH when relationships might not exist
 8. Order results by relevant criteria (e.g., severity, count, importance)
+9. For specific queries about dependencies, files, or methods, allow more results (up to 100)
 
 EXAMPLE PATTERNS:
 - Finding vulnerabilities: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(f:File)
@@ -302,7 +303,7 @@ EXAMPLE PATTERNS:
 
 RESPONSE FORMAT (JSON):
 {{
-    "query": "MATCH ... RETURN ... LIMIT 25",
+    "query": "MATCH ... RETURN ... LIMIT 50",
     "explanation": "This query finds X by doing Y, filtering by Z, and returns the results ordered by importance."
 }}
 
@@ -631,13 +632,13 @@ class SchemaCacheManager:
         schema_context += "8. File-Class-Method: File-DEFINES->Class-CONTAINS_METHOD->Method\n"
         
         schema_context += "\nEXAMPLE QUERIES:\n"
-        schema_context += "- Find vulnerable files: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(imp:Import)<-[:IMPORTS]-(f:File) WHERE cve.cvss_score >= 7.0 RETURN f.path, cve.id\n"
-        schema_context += "- CVEs affecting specific dependency: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency) WHERE dep.name = 'dependency.name' AND cve.cvss_score >= 7.0 RETURN cve.id, cve.description, cve.cvss_score\n"
-        schema_context += "- High severity CVEs for dependency: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency) WHERE dep.name = 'apoc.create.Create' AND cve.cvss_score >= 7.0 RETURN cve.id, cve.description, cve.cvss_score\n"
-        schema_context += "- Complex methods: MATCH (m:Method)<-[:DECLARES]-(f:File) WHERE m.estimated_lines > 50 RETURN f.path, m.name, m.estimated_lines\n"
-        schema_context += "- Developer activity: MATCH (dev:Developer)-[:AUTHORED]->(c:Commit) RETURN dev.name, count(c) as commits ORDER BY commits DESC\n"
-        schema_context += "- Methods in class: MATCH (c:Class {name: 'ClassName'})-[:CONTAINS_METHOD]->(m:Method) RETURN m.name, m.line\n"
-        schema_context += "- Methods in file: MATCH (f:File)-[:DECLARES]->(m:Method) WHERE f.path CONTAINS 'path/to/file' RETURN m.name, m.line\n"
+        schema_context += "- Find vulnerable files: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(imp:Import)<-[:IMPORTS]-(f:File) WHERE cve.cvss_score >= 7.0 RETURN f.path, cve.id LIMIT 50\n"
+        schema_context += "- CVEs affecting specific dependency: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency) WHERE dep.name = 'dependency.name' AND cve.cvss_score >= 7.0 RETURN cve.id, cve.description, cve.cvss_score LIMIT 50\n"
+        schema_context += "- High severity CVEs for dependency: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency) WHERE dep.name = 'apoc.create.Create' AND cve.cvss_score >= 7.0 RETURN cve.id, cve.description, cve.cvss_score LIMIT 50\n"
+        schema_context += "- Complex methods: MATCH (m:Method)<-[:DECLARES]-(f:File) WHERE m.estimated_lines > 50 RETURN f.path, m.name, m.estimated_lines LIMIT 50\n"
+        schema_context += "- Developer activity: MATCH (dev:Developer)-[:AUTHORED]->(c:Commit) RETURN dev.name, count(c) as commits ORDER BY commits DESC LIMIT 50\n"
+        schema_context += "- Methods in class: MATCH (c:Class {name: 'ClassName'})-[:CONTAINS_METHOD]->(m:Method) RETURN m.name, m.line LIMIT 50\n"
+        schema_context += "- Methods in file: MATCH (f:File)-[:DECLARES]->(m:Method) WHERE f.path CONTAINS 'path/to/file' RETURN m.name, m.line LIMIT 50\n"
         
         return schema_context
     

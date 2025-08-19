@@ -427,9 +427,11 @@ RESPONSE GUIDELINES:
 
 RESPONSE STRUCTURE:
 - **Results Summary**: Key findings and metrics
-- **Detailed Results**: Formatted table or list of results
+- **Detailed Results**: Complete table with ALL results (no truncation)
 - **Insights**: What the results mean
 - **Recommendations**: Actionable next steps
+
+IMPORTANT: Always show ALL results in the Detailed Results section. Do not truncate or limit the results to 5 items. If there are many results, format them in a proper table with all data visible.
 
 {"SPECIAL INSTRUCTIONS FOR TEXT2CYPHER RESULTS:" if text2cypher_used else ""}
 {"- Prominently display the generated Cypher query" if text2cypher_used else ""}
@@ -519,10 +521,10 @@ Be professional, insightful, and actionable. Use the actual data provided."""
                 if result.get("explanation"):
                     context_parts.append(f"💡 Explanation: {result['explanation']}")
 
-            # Add sample results (first 3-5 items)
+            # Add all results (no limitation for any tool)
             if result.get("results"):
-                context_parts.append("📋 Sample Results:")
-                for i, item in enumerate(result["results"][:5]):
+                context_parts.append("📋 All Results:")
+                for i, item in enumerate(result["results"]):
                     if isinstance(item, dict):
                         # Format dictionary items nicely
                         formatted_item = ", ".join(
@@ -531,11 +533,6 @@ Be professional, insightful, and actionable. Use the actual data provided."""
                         context_parts.append(f"  {i+1}. {formatted_item}")
                     else:
                         context_parts.append(f"  {i+1}. {item}")
-
-                if len(result["results"]) > 5:
-                    context_parts.append(
-                        f"  ... and {len(result['results']) - 5} more results"
-                    )
 
             context_parts.append("")
 

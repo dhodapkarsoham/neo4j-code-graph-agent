@@ -3,7 +3,7 @@
     "name": "cve_impact_analysis",
     "description": "Analyze the impact of CVEs on the codebase",
     "category": "Security",
-    "query": "MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\nMATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\nWITH cve, dep, count(f) as file_count\nMATCH (f:File)-[:IMPORTS]->(i:Import)-[:DEPENDS_ON]->(dep)\nMATCH (f)-[:DECLARES]->(m:Method)\nRETURN cve.cve_id as cve_id,\n       cve.cvss_score as severity,\n       dep.package as package,\n       file_count as affected_files,\n       count(m) as affected_methods,\n       'High impact vulnerability' as assessment\nORDER BY cve.cvss_score DESC, file_count DESC",
+    "query": "MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)\nMATCH (dep)<-[:DEPENDS_ON]-(i:Import)<-[:IMPORTS]-(f:File)\nWITH cve, dep, count(f) as file_count\nMATCH (f:File)-[:IMPORTS]->(i:Import)-[:DEPENDS_ON]->(dep)\nMATCH (f)-[:DECLARES]->(m:Method)\nRETURN DISTINCT cve.cve_id as cve_id,\n       cve.cvss_score as severity,\n       dep.package as package,\n       file_count as affected_files,\n       count(m) as affected_methods,\n       'High impact vulnerability' as assessment\nORDER BY cve.cvss_score DESC, file_count DESC",
     "parameters": null,
     "is_prebuilt": true
   },

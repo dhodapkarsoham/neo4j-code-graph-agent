@@ -112,6 +112,14 @@ class CodeGraphAgent:
                     "category": result.get("category", ""),
                     "db_metrics": result.get("db_metrics"),
                 }
+                
+                # Add text2cypher specific data for UI display
+                if tool_name == "text2cypher":
+                    reasoning_step.update({
+                        "generated_query": result.get("generated_query", ""),
+                        "explanation": result.get("explanation", ""),
+                        "results": result.get("results", []),
+                    })
                 state["reasoning"].append(reasoning_step)
 
             except Exception as e:
@@ -187,14 +195,9 @@ class CodeGraphAgent:
             context_parts.append(f"Category: {result['category']}")
             context_parts.append(f"Results ({result['result_count']} items):")
 
-            # Add sample results
-            for i, item in enumerate(result["results"][:5]):  # Show first 5 results
+            # Add all results (no limitation)
+            for i, item in enumerate(result["results"]):
                 context_parts.append(f"  {i+1}. {item}")
-
-            if len(result["results"]) > 5:
-                context_parts.append(
-                    f"  ... and {len(result['results']) - 5} more results"
-                )
 
             context_parts.append("")
 
@@ -315,16 +318,24 @@ class CodeGraphAgent:
                     result = tool_registry.execute_tool(tool_name)
                 tool_results.append(result)
                 # Append reasoning step to state
-                state.setdefault("reasoning", []).append(
-                    {
-                        "step": "tool_execution",
-                        "tool_name": tool_name,
-                        "description": f"Executed {tool_name}",
-                        "result_count": result.get("result_count", 0),
-                        "category": result.get("category", ""),
-                        "db_metrics": result.get("db_metrics"),
-                    }
-                )
+                reasoning_step = {
+                    "step": "tool_execution",
+                    "tool_name": tool_name,
+                    "description": f"Executed {tool_name}",
+                    "result_count": result.get("result_count", 0),
+                    "category": result.get("category", ""),
+                    "db_metrics": result.get("db_metrics"),
+                }
+                
+                # Add text2cypher specific data for UI display
+                if tool_name == "text2cypher":
+                    reasoning_step.update({
+                        "generated_query": result.get("generated_query", ""),
+                        "explanation": result.get("explanation", ""),
+                        "results": result.get("results", []),
+                    })
+                
+                state.setdefault("reasoning", []).append(reasoning_step)
                 # Stream summarized result (avoid huge payloads)
                 summary = {
                     "tool": tool_name,
