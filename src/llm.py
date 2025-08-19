@@ -233,9 +233,22 @@ ANALYSIS INSTRUCTIONS:
 5. **Use text2cypher for custom questions**: When the user asks specific questions that don't match predefined tools, use text2cypher
 
 TOOL SELECTION PRIORITY:
-1. **Predefined tools** for common analysis patterns (security, quality, team, architecture)
-2. **text2cypher** for specific questions, custom queries, or when no predefined tool fits
+1. **text2cypher** for specific questions, custom queries, natural language questions, or when user asks about specific entities
+2. **Predefined tools** for broad analysis patterns (security overview, quality overview, team overview, architecture overview)
 3. **Combinations** when multiple aspects are needed
+
+**PREFER text2cypher WHEN:**
+- User asks specific questions (e.g., "What CVEs affect apoc.create.Create?")
+- User mentions specific names, files, classes, methods, or dependencies
+- User asks "find", "show", "list", "how many", "which", "what" questions
+- User wants custom filtering, counting, or listing
+- User asks about relationships between specific entities
+- User asks security questions about specific dependencies or files
+- User asks quality questions about specific methods or classes
+- User asks team questions about specific developers or files
+- User asks architecture questions about specific components
+- No predefined tool perfectly matches the user's specific intent
+- User wants to query the database with natural language
 
 RESPONSE FORMAT (JSON):
 {{
@@ -248,27 +261,47 @@ RESPONSE FORMAT (JSON):
 }}
 
 EXAMPLES:
-- "Find security vulnerabilities" → security tools (vulnerable_dependencies_summary, cve_impact_analysis)
-- "Which files are too complex?" → quality tools (complex_methods_analysis, large_files_analysis)
-- "Who works on this module?" → team tools (developer_activity_summary, file_ownership_analysis)
-- "Show me architectural issues" → architecture tools (architectural_bottlenecks, co_changed_files_analysis)
+**text2cypher Examples (PREFERRED for specific questions):**
+- "What HIGH severity CVEs affect apoc.create.Create?" → text2cypher (specific dependency + CVE query)
 - "Find methods with more than 100 lines" → text2cypher (custom specific query)
 - "Show me files that import Jackson" → text2cypher (custom dependency query)
 - "Which developers worked on payment code?" → text2cypher (custom specific question)
 - "List all files in the authentication module" → text2cypher (custom listing query)
 - "How many classes extend BaseController?" → text2cypher (custom counting query)
 - "Find files changed in the last month" → text2cypher (custom time-based query)
+- "What CVEs are affecting our dependencies?" → text2cypher (specific security query)
+- "Show me complex methods in UserService" → text2cypher (specific quality query)
+- "Who worked on the login functionality?" → text2cypher (specific team query)
 
-**When to use text2cypher:**
+**Predefined Tools Examples (for broad overviews):**
+- "Give me a security overview" → security tools (vulnerable_dependencies_summary, cve_impact_analysis)
+- "Which files are too complex?" → quality tools (complex_methods_analysis, large_files_analysis)
+- "Who works on this module?" → team tools (developer_activity_summary, file_ownership_analysis)
+- "Show me architectural issues" → architecture tools (architectural_bottlenecks, co_changed_files_analysis)
+
+**When to use text2cypher (PREFERRED for specific queries):**
 - User asks specific questions not covered by predefined tools
 - User wants custom filtering, counting, or listing
 - User asks "find", "show", "list", "how many", "which", "what" questions
-- User mentions specific file names, class names, or code patterns
+- User mentions specific file names, class names, methods, dependencies, or developers
 - User asks about methods, classes, files, or relationships
-- No predefined tool matches the user's specific intent
+- User asks security questions about specific dependencies (e.g., "What CVEs affect X?")
+- User asks quality questions about specific methods or classes (e.g., "How complex is X?")
+- User asks team questions about specific developers or files (e.g., "Who worked on X?")
+- User asks architecture questions about specific components (e.g., "What depends on X?")
+- No predefined tool perfectly matches the user's specific intent
 - User wants to query the database with natural language
+- User asks questions that require custom Cypher queries
+- User mentions specific entities by name (files, classes, methods, dependencies, developers)
 
-**IMPORTANT:** Always prefer text2cypher for specific, targeted queries that don't fit predefined patterns. The LLM should be the only mechanism for tool selection - no keyword fallbacks are used.
+**IMPORTANT:** 
+- **ALWAYS prefer text2cypher** for specific, targeted queries that mention specific entities by name
+- **ALWAYS prefer text2cypher** for questions about specific dependencies, files, classes, methods, or developers
+- **ALWAYS prefer text2cypher** for security questions about specific dependencies (e.g., "What CVEs affect X?")
+- **Use predefined tools** only for broad overview questions without specific entities
+- The LLM should be the only mechanism for tool selection - no keyword fallbacks are used
+
+**DECISION RULE:** If the user mentions ANY specific name (dependency, file, class, method, developer), use text2cypher.
 
 Be intelligent and contextual. Understand the user's intent and select the most appropriate tool(s)."""
 

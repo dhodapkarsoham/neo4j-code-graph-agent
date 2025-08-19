@@ -459,7 +459,7 @@ EXAMPLE QUERIES:
         # Add text2cypher tool
         tools_list.append({
             "name": "text2cypher",
-            "description": "Generate and execute Cypher queries from natural language questions",
+            "description": "POWERFUL: Generate and execute custom Cypher queries from natural language. Perfect for specific questions about dependencies, files, classes, methods, developers, CVEs, and relationships. Handles complex queries that predefined tools cannot.",
             "category": "Query",
             "has_parameters": True,
             "is_prebuilt": True,
