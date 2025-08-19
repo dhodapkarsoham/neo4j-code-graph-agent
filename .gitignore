@@ -98,6 +98,10 @@ __pypackages__/
 
 # Celery
 celerybeat-schedule
+
+# Development documentation (kept for reference but not pushed to repo)
+docs/FIXES_SUMMARY.md
+docs/CLEANUP_SUMMARY.md
 celerybeat.pid
 
 # SageMath parsed files

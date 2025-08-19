@@ -36,6 +36,13 @@ Neo4j Code Graph Agent (this repo) is an intelligent agentic AI system that anal
 - **Persistent Storage**: Tools are automatically saved and persist across restarts
 - **LLM Integration**: Custom tools are intelligently selected by the LLM based on user queries
 
+### Natural Language to Cypher (Text2Cypher)
+- **Dynamic Schema Integration**: Automatically fetches database schema for accurate query generation
+- **LLM-Powered Query Generation**: Converts natural language questions into Cypher queries
+- **Intelligent Tool Selection**: Pure LLM-based tool selection without keyword fallbacks
+- **Real-time Results**: Executes generated queries and displays results in the chat interface
+- **Schema-Aware**: Always uses up-to-date database schema for correct relationship directions
+
 ## 🏗️ Architecture
 
 ```

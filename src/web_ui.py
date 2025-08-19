@@ -421,6 +421,10 @@ async def get_ui() -> HTMLResponse:
                                 result_count: msg.data.result_count,
                                 category: msg.data.category,
                                 db_metrics: msg.data.db_metrics || null,
+                                // Add text2cypher specific data
+                                generated_query: msg.data.generated_query || null,
+                                explanation: msg.data.explanation || null,
+                                results: msg.data.results || null,
                             });
                             setMessages(prev => {
                                 const updated = [...prev];
@@ -738,6 +742,34 @@ async def get_ui() -> HTMLResponse:
                         const avail = (m && m.available_after_ms != null) ? m.available_after_ms : '?';
                         const consumed = (m && m.consumed_after_ms != null) ? m.consumed_after_ms : '?';
                         stepHtml += `<div class="text-xs mb-2" style="color: #6B7280;">⏱️ Query Metrics: latency ${latency} ms, rows ${rows}, avail ${avail} ms, consumed ${consumed} ms</div>`;
+                    }
+                    
+                    // Special display for text2cypher results
+                    if (step.tool_name === 'text2cypher' && step.generated_query) {
+                        stepHtml += `
+                            <div class="mt-3 p-3 rounded-lg border" style="background: rgba(240, 249, 255, 0.8); border-color: rgba(10, 97, 144, 0.2);">
+                                <div class="text-sm font-semibold mb-2" style="color: #0A6190;">🔍 Generated Cypher Query:</div>
+                                <pre class="text-xs p-2 bg-gray-100 rounded overflow-x-auto" style="color: #1f2937;">${step.generated_query}</pre>
+                                ${step.explanation ? `
+                                    <div class="text-sm mt-2" style="color: #374151;">
+                                        <strong>💡 Explanation:</strong> ${step.explanation}
+                                    </div>
+                                ` : ''}
+                                ${step.results && step.results.length > 0 ? `
+                                    <div class="text-sm mt-2" style="color: #374151;">
+                                        <strong>📊 Results (${step.results.length}):</strong>
+                                        <div class="mt-1 space-y-1">
+                                            ${step.results.map((result, idx) => {
+                                                const formatted = Object.entries(result)
+                                                    .map(([k, v]) => `${k}: ${v}`)
+                                                    .join(', ');
+                                                return `<div class="text-xs p-1 bg-white rounded border">${idx + 1}. ${formatted}</div>`;
+                                            }).join('')}
+                                        </div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
                     }
                     
                     // Understanding and reasoning
@@ -1476,7 +1508,21 @@ async def health_check() -> Dict[str, Any]:
 async def list_tools() -> List[Dict[str, Any]]:
     """List all available tools."""
     try:
-        return tool_registry.list_tools()
+        tools = tool_registry.list_tools()
+        # Ensure text2cypher is always included
+        text2cypher_tool = {
+            "name": "text2cypher",
+            "description": "Generate and execute Cypher queries from natural language questions",
+            "category": "Query",
+            "has_parameters": True,
+            "is_prebuilt": True,
+        }
+        
+        # Check if text2cypher already exists
+        if not any(tool["name"] == "text2cypher" for tool in tools):
+            tools.append(text2cypher_tool)
+            
+        return tools
     except Exception as e:
         logger.error(f"Error listing tools: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1652,6 +1698,134 @@ async def delete_tool(tool_name: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/text2cypher")
+async def text2cypher_direct(request: Request) -> Dict[str, Any]:
+    """Direct text2cypher endpoint - bypasses agent for immediate testing."""
+    try:
+        data = await request.json()
+        user_question = data.get("question", "")
+        
+        if not user_question:
+            raise HTTPException(status_code=400, detail="Question is required")
+        
+        # Get dynamic schema from tools module
+        from src.tools import tool_registry
+        schema_info = tool_registry._get_database_schema_context()
+        
+        # Try to use LLM if available
+        try:
+            from src.llm import llm_client
+            
+            if llm_client.is_configured():
+                system_prompt = f"""You are an expert Neo4j Cypher query generator for a code analysis graph database.
+
+DATABASE SCHEMA:
+{schema_info}
+
+TASK: Convert the user's natural language question into a valid Cypher query.
+
+GUIDELINES:
+1. Use ONLY the node labels, properties, and relationships shown in the schema above
+2. Always include LIMIT clauses (typically 25-50) to prevent huge result sets
+3. Use DISTINCT to avoid duplicate results
+4. Use proper Cypher syntax with correct WHERE clauses and aggregations
+5. For complex questions, break them down into logical graph patterns
+6. Include relevant properties in the RETURN clause
+7. Use OPTIONAL MATCH when relationships might not exist
+8. Order results by relevant criteria (e.g., severity, count, importance)
+
+RESPONSE FORMAT (JSON):
+{{
+    "query": "MATCH ... RETURN ... LIMIT 25",
+    "explanation": "This query finds X by doing Y, filtering by Z, and returns the results ordered by importance."
+}}
+
+Be precise with property names and relationship directions."""
+
+                response = await llm_client.generate_response(
+                    messages=[{"role": "user", "content": f"Question: {user_question}"}],
+                    system_prompt=system_prompt,
+                    temperature=0.1,
+                    max_tokens=1000,
+                )
+                
+                # Parse JSON response
+                import json
+                import re
+                
+                try:
+                    cleaned_response = response.strip()
+                    if cleaned_response.startswith("```"):
+                        cleaned_response = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned_response)
+                        cleaned_response = re.sub(r"```$", "", cleaned_response).strip()
+                    
+                    if not cleaned_response.startswith("{"):
+                        start = cleaned_response.find("{")
+                        end = cleaned_response.rfind("}")
+                        if start != -1 and end != -1 and end > start:
+                            cleaned_response = cleaned_response[start : end + 1]
+                    
+                    result = json.loads(cleaned_response)
+                    generated_query = result.get("query", "")
+                    explanation = result.get("explanation", "Generated Cypher query from natural language")
+                    
+                except json.JSONDecodeError:
+                    # Fallback: extract Cypher from text
+                    cypher_match = re.search(r"(MATCH\s+.*?(?=\n\n|\n$|$))", response, re.DOTALL | re.IGNORECASE)
+                    if cypher_match:
+                        generated_query = cypher_match.group(1).strip()
+                        explanation = "Extracted Cypher query from LLM response"
+                    else:
+                        generated_query = ""
+                        explanation = "Could not extract valid Cypher query from LLM response"
+                
+            else:
+                # LLM not available, use simple fallback
+                generated_query = ""
+                explanation = "LLM not configured - cannot generate Cypher query"
+                
+        except Exception as e:
+            logger.error(f"Error generating Cypher query: {e}")
+            generated_query = ""
+            explanation = f"Error generating query: {str(e)}"
+        
+        # Execute query if generated
+        results = []
+        db_metrics = None
+        if generated_query:
+            try:
+                results = db.execute_query(generated_query)
+                db_metrics = getattr(db, "last_metrics", None)
+            except Exception as e:
+                logger.error(f"Error executing generated query: {e}")
+                results = []
+                explanation += f" (Query execution failed: {str(e)})"
+        
+        return {
+            "tool_name": "text2cypher",
+            "description": f"Generated and executed Cypher query for: {user_question}",
+            "category": "Query",
+            "results": results,
+            "result_count": len(results),
+            "db_metrics": db_metrics,
+            "generated_query": generated_query,
+            "explanation": explanation,
+            "user_question": user_question,
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in text2cypher_direct: {e}")
+        return {
+            "tool_name": "text2cypher",
+            "description": f"Failed to process question: {user_question}",
+            "category": "Query",
+            "results": [],
+            "result_count": 0,
+            "error": str(e),
+            "user_question": user_question,
+        }
+
+
 @app.post("/api/query")
 async def query_agent(request: Request) -> Dict[str, Any]:
     """Process a query through the agent."""
@@ -1670,6 +1844,7 @@ async def query_agent(request: Request) -> Dict[str, Any]:
             "reasoning": result.get("reasoning", []),
             "tools_used": result.get("tools_used", []),
             "understanding": result.get("understanding", {}),
+            "tool_results": result.get("tool_results", []),
         }
     except Exception as e:
         logger.error(f"Error processing query: {e}")

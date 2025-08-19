@@ -13,6 +13,8 @@ tests/
 ├── test_agent.py           # LangGraph agent tests
 ├── test_database.py        # Database connection tests
 ├── test_integration.py     # Integration tests
+├── test_dynamic_schema.py  # Dynamic schema generation tests
+├── test_schema_queries.py  # Database schema query tests
 ├── run_tests.py            # Test runner script
 └── README.md               # This file
 ```
@@ -25,6 +27,10 @@ tests/
 - **test_llm.py**: LLM client functionality
 - **test_agent.py**: Agent workflow and logic
 - **test_database.py**: Database connection and queries
+
+### Schema Tests
+- **test_dynamic_schema.py**: Dynamic schema generation from database
+- **test_schema_queries.py**: Database schema exploration and validation
 
 ### Integration Tests
 - **test_integration.py**: End-to-end system tests

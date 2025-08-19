@@ -89,17 +89,18 @@ class CodeGraphAgent:
 
         logger.info(f"Executing tools. Selected tools: {state['selected_tools']}")
 
-        # If no tools were selected, try to find a relevant tool based on keywords
+        # If no tools were selected, log a warning but don't use keyword fallback
         if not state["selected_tools"]:
-            logger.warning("No tools selected, attempting keyword-based selection")
-            state["selected_tools"] = self._select_tools_by_keywords(
-                state["user_query"]
-            )
-            logger.info(f"Keyword-based selection result: {state['selected_tools']}")
+            logger.warning("No tools selected by LLM. This may indicate an issue with tool selection.")
+            logger.info("Available tools: " + ", ".join([t["name"] for t in tool_registry.list_tools()]))
 
         for tool_name in state["selected_tools"]:
             try:
-                result = tool_registry.execute_tool(tool_name)
+                # Special handling for text2cypher tool - pass the user query as parameter and use async
+                if tool_name == "text2cypher":
+                    result = await tool_registry.async_execute_tool(tool_name, {"question": state["user_query"]})
+                else:
+                    result = tool_registry.execute_tool(tool_name)
                 tool_results.append(result)
 
                 # Add reasoning
@@ -120,6 +121,12 @@ class CodeGraphAgent:
                 )
 
         state["tool_results"] = tool_results
+        
+        # Ensure the state is properly updated with tool results
+        logger.info(f"Tool execution completed. Results count: {len(tool_results)}")
+        for result in tool_results:
+            logger.info(f"  Tool: {result.get('tool_name')}, Results: {result.get('result_count', 0)}")
+        
         return state
 
     async def _generate_response(self, state: AgentState) -> AgentState:
@@ -159,80 +166,7 @@ class CodeGraphAgent:
 
         return state
 
-    def _select_tools_by_keywords(self, query: str) -> List[str]:
-        """Select tools based on keyword matching when LLM selection fails."""
-        query_lower = query.lower()
-        available_tools = tool_registry.list_tools()
-        selected_tools = []
 
-        # Keyword mappings
-        keyword_mappings = {
-            "vulnerable": [
-                "vulnerable_dependencies_summary",
-                "cve_impact_analysis",
-                "find_customer_facing_vulnerable_apis",
-            ],
-            "dependency": [
-                "vulnerable_dependencies_summary",
-                "dependency_license_audit",
-                "cve_impact_analysis",
-            ],
-            "security": [
-                "vulnerable_dependencies_summary",
-                "cve_impact_analysis",
-                "find_customer_facing_vulnerable_apis",
-                "dependency_license_audit",
-            ],
-            "complex": ["complex_methods_analysis", "refactoring_priority_matrix"],
-            "refactor": [
-                "complex_methods_analysis",
-                "refactoring_priority_matrix",
-                "architectural_bottlenecks",
-            ],
-            "developer": [
-                "developer_activity_summary",
-                "file_ownership_analysis",
-                "find_module_experts",
-            ],
-            "team": [
-                "developer_activity_summary",
-                "file_ownership_analysis",
-                "find_module_experts",
-            ],
-            "architecture": [
-                "architectural_bottlenecks",
-                "refactoring_priority_matrix",
-                "co_changed_files_analysis",
-            ],
-            "large": ["large_files_analysis", "complex_methods_analysis"],
-            "file": [
-                "large_files_analysis",
-                "file_ownership_analysis",
-                "co_changed_files_analysis",
-            ],
-        }
-
-        # Find matching keywords
-        for keyword, tool_names in keyword_mappings.items():
-            if keyword in query_lower:
-                for tool_name in tool_names:
-                    if (
-                        tool_name in [t["name"] for t in available_tools]
-                        and tool_name not in selected_tools
-                    ):
-                        selected_tools.append(tool_name)
-
-        # If still no tools found, return the most relevant security tool for vulnerability queries
-        if not selected_tools and any(
-            word in query_lower for word in ["vulnerable", "dependency", "security"]
-        ):
-            if "vulnerable_dependencies_summary" in [
-                t["name"] for t in available_tools
-            ]:
-                selected_tools.append("vulnerable_dependencies_summary")
-
-        logger.info(f"Keyword-based tool selection: {selected_tools}")
-        return selected_tools
 
     def _prepare_context(self, state: AgentState) -> str:
         """Prepare context from tool results for LLM."""
@@ -279,12 +213,17 @@ class CodeGraphAgent:
 
         try:
             final_state = await self.workflow.ainvoke(initial_state)
+            
+            # Ensure tool_results is included in the response
+            tool_results = final_state.get("tool_results", [])
+            logger.info(f"Final state tool_results count: {len(tool_results)}")
+            
             return {
                 "query": user_query,
                 "response": final_state["final_response"],
                 "understanding": final_state["understanding"],
                 "tools_used": final_state["selected_tools"],
-                "tool_results": final_state["tool_results"],
+                "tool_results": tool_results,
                 "reasoning": final_state["reasoning"],
             }
         except Exception as e:
@@ -350,11 +289,11 @@ class CodeGraphAgent:
         tool_results: List[Dict[str, Any]] = []
         selected_tools = state.get("selected_tools", [])
         if not selected_tools:
-            # Fallback keyword selection if nothing selected
-            selected_tools = self._select_tools_by_keywords(user_query)
+            # No fallback - rely on LLM selection
+            logger.warning("No tools selected by LLM in streaming mode")
             yield {
                 "type": "tools_selected",
-                "data": {"tools": selected_tools, "fallback": True},
+                "data": {"tools": [], "fallback": False},
             }
 
         for tool_name in selected_tools:
@@ -369,7 +308,11 @@ class CodeGraphAgent:
                 "data": {"tool": tool_name, "cypher": tool_cypher},
             }
             try:
-                result = tool_registry.execute_tool(tool_name)
+                # Special handling for text2cypher tool - pass the user query as parameter and use async
+                if tool_name == "text2cypher":
+                    result = await tool_registry.async_execute_tool(tool_name, {"question": user_query})
+                else:
+                    result = tool_registry.execute_tool(tool_name)
                 tool_results.append(result)
                 # Append reasoning step to state
                 state.setdefault("reasoning", []).append(
@@ -389,6 +332,15 @@ class CodeGraphAgent:
                     "category": result.get("category", ""),
                     "db_metrics": result.get("db_metrics"),
                 }
+                
+                # Add text2cypher specific data for UI display
+                if tool_name == "text2cypher":
+                    summary.update({
+                        "generated_query": result.get("generated_query", ""),
+                        "explanation": result.get("explanation", ""),
+                        "results": result.get("results", [])[:10],  # Limit to first 10 results for streaming
+                    })
+                
                 yield {"type": "tool_execution_result", "data": summary}
             except Exception as e:
                 logger.error(f"Error executing tool {tool_name} (stream): {e}")

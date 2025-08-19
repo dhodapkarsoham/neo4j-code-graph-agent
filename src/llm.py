@@ -204,9 +204,15 @@ class AzureOpenAIClient:
         )
 
         if not self.client:
-            logger.warning("LLM client not available, using fallback")
-            # Fallback to keyword-based approach if LLM not available
-            return self._fallback_keyword_selection(user_query, available_tools)
+            logger.warning("LLM client not available")
+            return {
+                "understanding": "LLM client not available",
+                "selected_tools": [],
+                "reasoning": "Cannot analyze query without LLM",
+                "query_type": "error",
+                "expected_insights": "Unable to determine",
+                "llm_analysis": "LLM client not available",
+            }
 
         logger.info("LLM client is available, proceeding with LLM analysis")
 
@@ -224,13 +230,19 @@ ANALYSIS INSTRUCTIONS:
 2. **Select relevant tools**: Choose 1-4 tools that best address their needs
 3. **Consider tool combinations**: Some queries need multiple tools for comprehensive analysis
 4. **Prioritize by relevance**: Don't select tools just because they're available
+5. **Use text2cypher for custom questions**: When the user asks specific questions that don't match predefined tools, use text2cypher
+
+TOOL SELECTION PRIORITY:
+1. **Predefined tools** for common analysis patterns (security, quality, team, architecture)
+2. **text2cypher** for specific questions, custom queries, or when no predefined tool fits
+3. **Combinations** when multiple aspects are needed
 
 RESPONSE FORMAT (JSON):
 {{
     "understanding": "Brief explanation of what the user is asking for",
     "selected_tools": ["tool_name_1", "tool_name_2"],
     "reasoning": "Detailed explanation of why these tools were selected",
-    "query_type": "security|quality|team|architecture|general",
+    "query_type": "security|quality|team|architecture|general|custom",
     "expected_insights": "What kind of insights these tools should provide",
     "llm_analysis": "Step-by-step analysis of how you arrived at this decision"
 }}
@@ -240,8 +252,25 @@ EXAMPLES:
 - "Which files are too complex?" → quality tools (complex_methods_analysis, large_files_analysis)
 - "Who works on this module?" → team tools (developer_activity_summary, file_ownership_analysis)
 - "Show me architectural issues" → architecture tools (architectural_bottlenecks, co_changed_files_analysis)
+- "Find methods with more than 100 lines" → text2cypher (custom specific query)
+- "Show me files that import Jackson" → text2cypher (custom dependency query)
+- "Which developers worked on payment code?" → text2cypher (custom specific question)
+- "List all files in the authentication module" → text2cypher (custom listing query)
+- "How many classes extend BaseController?" → text2cypher (custom counting query)
+- "Find files changed in the last month" → text2cypher (custom time-based query)
 
-Be intelligent and contextual. Don't just match keywords - understand the intent."""
+**When to use text2cypher:**
+- User asks specific questions not covered by predefined tools
+- User wants custom filtering, counting, or listing
+- User asks "find", "show", "list", "how many", "which", "what" questions
+- User mentions specific file names, class names, or code patterns
+- User asks about methods, classes, files, or relationships
+- No predefined tool matches the user's specific intent
+- User wants to query the database with natural language
+
+**IMPORTANT:** Always prefer text2cypher for specific, targeted queries that don't fit predefined patterns. The LLM should be the only mechanism for tool selection - no keyword fallbacks are used.
+
+Be intelligent and contextual. Understand the user's intent and select the most appropriate tool(s)."""
 
             messages = [
                 {
@@ -306,15 +335,25 @@ Be intelligent and contextual. Don't just match keywords - understand the intent
             except json.JSONDecodeError as e:
                 logger.warning(f"LLM response not in JSON format: {e}")
                 logger.warning(f"Raw response: {response[:200]}...")
-                logger.warning(
-                    "Falling back to keyword selection due to JSON parsing error"
-                )
-                return self._fallback_keyword_selection(user_query, available_tools)
+                return {
+                    "understanding": "Failed to parse LLM response",
+                    "selected_tools": [],
+                    "reasoning": "JSON parsing error",
+                    "query_type": "error",
+                    "expected_insights": "Unable to determine",
+                    "llm_analysis": f"JSON parsing error: {e}",
+                }
 
         except Exception as e:
             logger.error(f"Error in LLM tool selection: {e}")
-            logger.warning("Falling back to keyword selection due to exception")
-            return self._fallback_keyword_selection(user_query, available_tools)
+            return {
+                "understanding": f"Error in LLM tool selection: {e}",
+                "selected_tools": [],
+                "reasoning": "Exception occurred during analysis",
+                "query_type": "error",
+                "expected_insights": "Unable to determine",
+                "llm_analysis": f"Exception: {e}",
+            }
 
     async def generate_intelligent_response(
         self,
@@ -337,6 +376,9 @@ Be intelligent and contextual. Don't just match keywords - understand the intent
         try:
             # Prepare context from tool results
             context = self._prepare_tool_results_context(tool_results)
+            
+            # Check if text2cypher was used
+            text2cypher_used = any(result.get("tool_name") == "text2cypher" for result in tool_results)
 
             system_prompt = f"""You are an expert code analysis agent specializing in {query_type} analysis. 
 
@@ -351,11 +393,17 @@ RESPONSE GUIDELINES:
 5. **Suggest Next Steps**: What should the user do with this information?
 
 RESPONSE STRUCTURE:
-- **Executive Summary**: 2-3 key findings
-- **Detailed Analysis**: Specific examples and metrics
-- **Risk Assessment**: What are the implications?
+- **Results Summary**: Key findings and metrics
+- **Detailed Results**: Formatted table or list of results
+- **Insights**: What the results mean
 - **Recommendations**: Actionable next steps
-- **Technical Details**: Specific technical findings
+
+{"SPECIAL INSTRUCTIONS FOR TEXT2CYPHER RESULTS:" if text2cypher_used else ""}
+{"- Prominently display the generated Cypher query" if text2cypher_used else ""}
+{"- Show the query explanation and results clearly" if text2cypher_used else ""}
+{"- Format the results in a readable table or list" if text2cypher_used else ""}
+{"- Include the query in a code block for easy copying" if text2cypher_used else ""}
+{"- DO NOT show any Cypher queries for pre-built tools" if not text2cypher_used else ""}
 
 Be professional, insightful, and actionable. Use the actual data provided."""
 
@@ -430,6 +478,14 @@ Be professional, insightful, and actionable. Use the actual data provided."""
             context_parts.append(f"📊 Category: {result['category']}")
             context_parts.append(f"📈 Results: {result['result_count']} items")
 
+            # Special handling for text2cypher results
+            if result.get("tool_name") == "text2cypher":
+                if result.get("generated_query"):
+                    context_parts.append(f"🔍 Generated Cypher Query:")
+                    context_parts.append(f"  {result['generated_query']}")
+                if result.get("explanation"):
+                    context_parts.append(f"💡 Explanation: {result['explanation']}")
+
             # Add sample results (first 3-5 items)
             if result.get("results"):
                 context_parts.append("📋 Sample Results:")
@@ -486,103 +542,7 @@ Be professional, insightful, and actionable. Use the actual data provided."""
 
         return "\n".join(response_parts)
 
-    def _fallback_keyword_selection(
-        self, user_query: str, available_tools: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Fallback to keyword-based tool selection when LLM is not available."""
-        query_lower = user_query.lower()
-        available_tool_names = [tool["name"] for tool in available_tools]
-        selected_tools = []
 
-        # Keyword-based tool selection
-        if any(
-            word in query_lower
-            for word in ["vulnerable", "dependency", "security", "cve"]
-        ):
-            # Security-related tools
-            security_tools = [
-                "vulnerable_dependencies_summary",
-                "cve_impact_analysis",
-                "dependency_license_audit",
-                "find_customer_facing_vulnerable_apis",
-            ]
-            for tool in security_tools:
-                if tool in available_tool_names:
-                    selected_tools.append(tool)
-
-        elif any(
-            word in query_lower
-            for word in ["complex", "refactor", "technical debt", "bottleneck"]
-        ):
-            # Quality/Architecture tools
-            quality_tools = [
-                "complex_methods_analysis",
-                "refactoring_priority_matrix",
-                "architectural_bottlenecks",
-                "large_files_analysis",
-            ]
-            for tool in quality_tools:
-                if tool in available_tool_names:
-                    selected_tools.append(tool)
-
-        elif any(
-            word in query_lower
-            for word in ["developer", "team", "activity", "ownership"]
-        ):
-            # Team-related tools
-            team_tools = [
-                "developer_activity_summary",
-                "file_ownership_analysis",
-                "find_module_experts",
-            ]
-            for tool in team_tools:
-                if tool in available_tool_names:
-                    selected_tools.append(tool)
-
-        elif any(
-            word in query_lower for word in ["architecture", "co-change", "module"]
-        ):
-            # Architecture tools
-            arch_tools = [
-                "co_changed_files_analysis",
-                "architectural_bottlenecks",
-                "refactoring_priority_matrix",
-            ]
-            for tool in arch_tools:
-                if tool in available_tool_names:
-                    selected_tools.append(tool)
-
-        # If no tools selected, default to security tools for vulnerability queries
-        if not selected_tools:
-            if any(
-                word in query_lower for word in ["vulnerable", "dependency", "security"]
-            ):
-                if "vulnerable_dependencies_summary" in available_tool_names:
-                    selected_tools.append("vulnerable_dependencies_summary")
-            elif "complex" in query_lower:
-                if "complex_methods_analysis" in available_tool_names:
-                    selected_tools.append("complex_methods_analysis")
-            elif "developer" in query_lower:
-                if "developer_activity_summary" in available_tool_names:
-                    selected_tools.append("developer_activity_summary")
-
-        # Create understanding based on selected tools
-        if selected_tools:
-            understanding = f"User is asking about {query_lower.split()[0]} and related topics. Selected {len(selected_tools)} relevant tools."
-            reasoning = f"Selected tools based on keywords: {', '.join(selected_tools)}"
-        else:
-            understanding = (
-                f"Could not determine specific tools for query: {user_query}"
-            )
-            reasoning = "No specific keywords matched available tools"
-
-        return {
-            "understanding": understanding,
-            "selected_tools": selected_tools,
-            "reasoning": reasoning,
-            "query_type": "fallback",
-            "expected_insights": "Basic analysis based on keyword matching",
-        }
 
     def _format_tools_for_llm(self, tools: List[Dict[str, Any]]) -> str:
         """Format tools list for LLM consumption."""
