@@ -22,7 +22,3 @@ dataclasses-json>=0.6.0
 
 # Standard library extensions
 typing-extensions>=4.8.0
-
-# Additional dependencies for enhanced functionality
-aiofiles>=23.0.0  # For async file operations
-jinja2>=3.1.0     # For template rendering (if needed)
