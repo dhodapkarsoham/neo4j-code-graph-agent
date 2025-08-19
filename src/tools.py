@@ -1,12 +1,12 @@
 """Code Analysis Tools for Neo4j Code Graph Analysis."""
 
+import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 from datetime import datetime, timedelta
-import asyncio
 
 from src.database import db
 
@@ -32,6 +32,9 @@ class ToolRegistry:
         """Initialize tool registry and load tools from JSON file."""
         self.tools_file = Path(__file__).parent.parent / "tools.json"
         self.tools = self._load_all_tools()
+        
+        # Add built-in text2cypher tools to the registry
+        self._add_builtin_text2cypher_tools()
 
     def _create_empty_tools_file(self) -> None:
         """Create an empty tools.json file with basic structure."""
@@ -65,6 +68,23 @@ class ToolRegistry:
         # If file doesn't exist or is corrupted, create empty tools file
         self._create_empty_tools_file()
         return []
+    
+    def _add_builtin_text2cypher_tools(self) -> None:
+        """Add built-in text2cypher tools to the registry."""
+        # Add text2cypher tool if not already present
+        if not self.get_tool_by_name("text2cypher"):
+            text2cypher_tool = CodeTool(
+                name="text2cypher",
+                description="ENHANCED: Advanced natural language to Cypher with multi-step validation, error correction, and robust workflow. Includes guardrails, syntax validation, and automatic error correction. Perfect for specific questions about dependencies, files, classes, methods, developers, CVEs, and relationships.",
+                category="Query",
+                query="",  # This tool doesn't use a static query
+                parameters={"question": "string"},
+                is_prebuilt=True,
+            )
+            self.tools.append(text2cypher_tool)
+            logger.info("Added built-in enhanced text2cypher tool to registry")
+        
+
 
     def _save_all_tools(self, tools: List[CodeTool] = None) -> None:
         """Save all tools to JSON file."""
@@ -216,7 +236,7 @@ class ToolRegistry:
         self, tool_name: str, parameters: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """Execute a tool asynchronously and return results."""
-        # Special handling for text2cypher tool
+                # Special handling for text2cypher tools
         if tool_name == "text2cypher":
             return await self._execute_text2cypher_tool(parameters or {})
         
@@ -224,37 +244,32 @@ class ToolRegistry:
         return self.execute_tool(tool_name, parameters)
 
     async def _execute_text2cypher_tool(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute text2cypher tool to generate and run Cypher queries from natural language."""
-        from src.llm import llm_client
+        """Execute enhanced text2cypher tool using LangGraph workflow."""
+        from src.text2cypher import text2cypher
         
         user_question = parameters.get("question", "")
         if not user_question:
             raise ValueError("Parameter 'question' is required for text2cypher tool")
         
         try:
-            # Generate Cypher query using LLM
-            cypher_result = await self._generate_cypher_from_text(user_question)
-            generated_query = cypher_result["query"]
-            explanation = cypher_result["explanation"]
-            
-            # Execute the generated query
-            results = db.execute_query(generated_query)
-            metrics = getattr(db, "last_metrics", None)
+            # Use the enhanced LangGraph workflow
+            result = await text2cypher(user_question)
             
             return {
                 "tool_name": "text2cypher",
-                "description": f"Generated and executed Cypher query for: {user_question}",
+                "description": f"Enhanced Cypher generation with validation for: {user_question}",
                 "category": "Query",
-                "results": results,
-                "result_count": len(results),
-                "db_metrics": metrics,
-                "generated_query": generated_query,
-                "explanation": explanation,
+                "results": result.get("answer", "No results generated"),
+                "result_count": 1,  # Enhanced version returns a single answer
+                "generated_query": result.get("cypher_statement", ""),
+                "explanation": result.get("explanation", ""),
                 "user_question": user_question,
+                "steps": result.get("steps", []),
+                "enhanced": True,
             }
             
         except Exception as e:
-            logger.error(f"Error in text2cypher tool: {e}")
+            logger.error(f"Error in enhanced text2cypher tool: {e}")
             return {
                 "tool_name": "text2cypher",
                 "description": f"Failed to process question: {user_question}",
@@ -263,7 +278,10 @@ class ToolRegistry:
                 "result_count": 0,
                 "error": str(e),
                 "user_question": user_question,
+                "enhanced": True,
             }
+
+
 
     async def _generate_cypher_from_text(self, user_question: str) -> Dict[str, str]:
         """Generate a Cypher query from natural language question."""
@@ -460,11 +478,13 @@ EXAMPLE QUERIES:
         # Add text2cypher tool
         tools_list.append({
             "name": "text2cypher",
-            "description": "POWERFUL: Generate and execute custom Cypher queries from natural language. Perfect for specific questions about dependencies, files, classes, methods, developers, CVEs, and relationships. Handles complex queries that predefined tools cannot.",
+            "description": "ENHANCED: Advanced natural language to Cypher with multi-step validation, error correction, and robust workflow. Includes guardrails, syntax validation, and automatic error correction. Perfect for specific questions about dependencies, files, classes, methods, developers, CVEs, and relationships.",
             "category": "Query",
             "has_parameters": True,
             "is_prebuilt": True,
         })
+        
+
         
         return tools_list
 

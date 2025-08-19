@@ -233,7 +233,7 @@ ANALYSIS INSTRUCTIONS:
 5. **Use text2cypher for custom questions**: When the user asks specific questions that don't match predefined tools, use text2cypher
 
 TOOL SELECTION PRIORITY:
-1. **text2cypher** for specific questions, custom queries, natural language questions, or when user asks about specific entities
+1. **text2cypher** for specific questions, custom queries, natural language questions, or when user asks about specific entities (ENHANCED with validation and error correction)
 2. **Predefined tools** for broad analysis patterns (security overview, quality overview, team overview, architecture overview)
 3. **Combinations** when multiple aspects are needed
 

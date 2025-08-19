@@ -120,6 +120,7 @@ class CodeGraphAgent:
                         "explanation": result.get("explanation", ""),
                         "results": result.get("results", []),
                     })
+
                 state["reasoning"].append(reasoning_step)
 
             except Exception as e:
@@ -314,6 +315,7 @@ class CodeGraphAgent:
                 # Special handling for text2cypher tool - pass the user query as parameter and use async
                 if tool_name == "text2cypher":
                     result = await tool_registry.async_execute_tool(tool_name, {"question": user_query})
+
                 else:
                     result = tool_registry.execute_tool(tool_name)
                 tool_results.append(result)
@@ -334,6 +336,7 @@ class CodeGraphAgent:
                         "explanation": result.get("explanation", ""),
                         "results": result.get("results", []),
                     })
+
                 
                 state.setdefault("reasoning", []).append(reasoning_step)
                 # Stream summarized result (avoid huge payloads)
@@ -351,6 +354,7 @@ class CodeGraphAgent:
                         "explanation": result.get("explanation", ""),
                         "results": result.get("results", [])[:10],  # Limit to first 10 results for streaming
                     })
+
                 
                 yield {"type": "tool_execution_result", "data": summary}
             except Exception as e:
