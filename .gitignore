@@ -105,6 +105,7 @@ docs/CLEANUP_SUMMARY.md
 docs/REFACTORING_SUMMARY.md
 docs/TEXT2CYPHER_SUMMARY.md
 docs/SUMMARY.md
+docs/ENHANCED_CYPHER_GENERATION.md
 celerybeat.pid
 
 # SageMath parsed files

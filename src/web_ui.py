@@ -1092,7 +1092,7 @@ async def get_ui() -> HTMLResponse:
                                         <textarea
                                             value={query}
                                             onChange={(e) => setQuery(e.target.value)}
-                                            placeholder="💡 Ask questions in natural language: 'What HIGH severity CVEs affect apoc.create.Create?' or 'Find methods with more than 100 lines' or 'Who worked on the authentication module?'"
+                                            placeholder="Ask your question here..."
                                             className="w-full p-6 border-2 border-gray-200 rounded-2xl text-lg resize-none focus:border-blue-500 focus:outline-none"
                                             rows="5"
                                             onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendQuery()}

@@ -42,118 +42,282 @@ async def guardrails(state: Text2CypherState) -> Text2CypherState:
     """
     Check if the question is relevant to our codebase domain.
     """
-    guardrails_prompt = """You are a guardrail system for a code analysis tool. 
-    Determine if the user's question is related to code analysis, software development, 
-    or technical queries that can be answered using a code graph database.
-    
-    Return 'code' if the question is relevant to code analysis, software development, 
-    or technical queries. Return 'other' for anything else.
-    
-    Examples of relevant questions:
-    - Questions about code, methods, classes, files
-    - Questions about dependencies, vulnerabilities, security
-    - Questions about code quality, complexity, architecture
-    - Questions about developers, teams, code ownership
-    - Questions about CVEs, licenses, technical debt
-    
-    Examples of irrelevant questions:
-    - Weather, news, general knowledge
-    - Personal questions, entertainment
-    - Questions not related to software development
-    
-    Question: {question}
-    
-    Is this question related to code analysis? (code/other):"""
-    
-    messages = [{"role": "user", "content": guardrails_prompt.format(question=state["question"])}]
-    result = await llm_client.generate_response(messages)
-    is_relevant = "code" in result.lower()
-    
-    return {
-        "next_action": "generate_cypher",  # Always proceed for now
-        "steps": ["guardrails"],
-        **state
-    }
+    try:
+        guardrails_prompt = """You are a guardrail system for a code analysis tool. 
+        Determine if the user's question is related to code analysis, software development, 
+        or technical queries that can be answered using a code graph database.
+        
+        Return 'code' if the question is relevant to code analysis, software development, 
+        or technical queries. Return 'other' for anything else.
+        
+        Examples of relevant questions:
+        - Questions about code, methods, classes, files
+        - Questions about dependencies, vulnerabilities, security
+        - Questions about code quality, complexity, architecture
+        - Questions about developers, teams, code ownership
+        - Questions about CVEs, licenses, technical debt
+        
+        Examples of irrelevant questions:
+        - Weather, news, general knowledge
+        - Personal questions, entertainment
+        - Questions not related to software development
+        
+        Question: {question}
+        
+        Is this question related to code analysis? (code/other):"""
+        
+        messages = [{"role": "user", "content": guardrails_prompt.format(question=state["question"])}]
+        result = await llm_client.generate_response(messages)
+        is_relevant = "code" in result.lower()
+        
+        return {
+            **state,
+            "next_action": "generate_cypher",  # Always proceed for now
+            "steps": state.get("steps", []) + ["guardrails"]
+        }
+    except Exception as e:
+        logger.error(f"Error in guardrails: {e}")
+        logger.error(f"State keys: {list(state.keys())}")
+        logger.error(f"State question: {state.get('question', 'NOT_FOUND')}")
+        # Return a safe state even if guardrails fails
+        return {
+            **state,
+            "next_action": "generate_cypher",
+            "steps": state.get("steps", []) + ["guardrails_error"]
+        }
 
 async def generate_cypher(state: Text2CypherState) -> Text2CypherState:
     """
-    Generate Cypher query from natural language question.
+    Generate Cypher query from natural language question with dynamic schema validation.
     """
+    logger.info("=== ENTERING generate_cypher function ===")
+    logger.info(f"Input state type: {type(state)}")
+    logger.info(f"Input state keys: {list(state.keys()) if isinstance(state, dict) else 'NOT_DICT'}")
+    logger.info(f"Question: {state.get('question', 'NO_QUESTION') if isinstance(state, dict) else 'STATE_NOT_DICT'}")
+    
+    try:
+        # Get the current schema
+        logger.info("Fetching database schema...")
+        schema_context = await schema_cache_manager.get_schema()
+        logger.info(f"Schema fetched, length: {len(schema_context)} characters")
+        logger.info(f"Schema preview (first 500 chars): {schema_context[:500]}")
+        
+        # Get schema rules for Cypher generation
+        logger.info("Getting schema rules...")
+        dynamic_rules = get_schema_rules()
+        logger.info(f"Schema rules length: {len(dynamic_rules)} characters")
+        
+        logger.info("Building prompt template...")
+        try:
+            # Use .format() with named placeholders to avoid f-string conflicts with schema braces
+            generate_prompt_template = """You are an expert Neo4j Cypher query generator for a code analysis graph database. 
+            Your task is to generate ACCURATE and VALID Cypher queries that strictly adhere to the database schema.
 
-    # Get the current schema
-    schema_context = await schema_cache_manager.get_schema()
-    
-    generate_prompt = """You are a Cypher expert for a code analysis graph database. 
-    Generate Cypher queries to answer questions about code, dependencies, vulnerabilities, and software development.
-    
-    Database Schema:
-    {schema}
-    
-    IMPORTANT RELATIONSHIP SEMANTICS:
-    - AFFECTS: When a CVE AFFECTS an ExternalDependency, it means the CVE impacts that dependency
-    - DEPENDS_ON: When an Import DEPENDS_ON an ExternalDependency, it means the code uses that dependency
-    - CONTAINS_METHOD: When a Class CONTAINS_METHOD, it means the method belongs to that class
-    - DEFINES: When a File DEFINES a Class/Method, it means the class/method is declared in that file
-    - CALLS: When a Method CALLS another Method, it means there's a method invocation
-    
-    Guidelines:
-    - Use proper Cypher syntax
-    - Include LIMIT clauses for large result sets
-    - Use parameterized queries when possible
-    - Focus on code analysis, dependencies, CVEs, and software development
-    - Return only the Cypher query, no explanations
-    - When querying relationships, understand that the relationship direction indicates the semantic meaning
-    
-    Question: {question}
-    
-    Generate a Cypher query:"""
-    
-    messages = [{"role": "user", "content": generate_prompt.format(
-        question=state["question"],
-        schema=schema_context
-    )}]
-    cypher_query = await llm_client.generate_response(messages)
-    
-    # Clean up the response (remove markdown formatting if present)
-    cypher_query = cypher_query.strip()
-    if cypher_query.startswith("```cypher"):
-        cypher_query = cypher_query[9:]
-    if cypher_query.startswith("```"):
-        cypher_query = cypher_query[3:]
-    if cypher_query.endswith("```"):
-        cypher_query = cypher_query[:-3]
-    cypher_query = cypher_query.strip()
-    
-    return {
-        **state,
-        "cypher_statement": cypher_query,
-        "next_action": "validate_cypher",
-        "steps": state["steps"] + ["generate_cypher"]
-    }
+            DATABASE SCHEMA:
+            {schema_context}
+
+            {dynamic_rules}
+
+            IMPORTANT: For complex questions that ask multiple things (like "Which files have most versions? Are there any CVEs impacting them?"), 
+            you should generate a SINGLE comprehensive Cypher query that answers the entire question, not separate queries.
+            
+            For example:
+            - Question: "Which files have most versions? Are there any CVEs impacting them?"
+            - Answer: Generate a query that finds files with most versions AND checks for CVEs affecting those files in one query
+            
+            RESPONSE FORMAT: Return ONLY the Cypher query as plain text, no JSON, no markdown, no explanations.
+            
+            Question: {question}
+            
+            Cypher query:"""
+            
+            generate_prompt = generate_prompt_template.format(
+                schema_context=schema_context,
+                dynamic_rules=dynamic_rules,
+                question=state["question"]
+            )
+            logger.info("Prompt template built successfully")
+        except Exception as prompt_error:
+            logger.error(f"Error building prompt template: {prompt_error}")
+            logger.error(f"schema_context type: {type(schema_context)}")
+            logger.error(f"dynamic_rules type: {type(dynamic_rules)}")
+            logger.error(f"question: {state.get('question', 'NO_QUESTION')}")
+            raise
+        
+        logger.info("Creating messages...")
+        try:
+            messages = [{"role": "user", "content": generate_prompt}]
+            logger.info("Messages created successfully")
+        except Exception as format_error:
+            logger.error(f"Error creating messages: {format_error}")
+            raise
+        
+        logger.info(f"Final prompt length: {len(messages[0]['content'])} characters")
+        logger.info(f"Final prompt preview (first 1000 chars): {messages[0]['content'][:1000]}")
+        logger.info(f"Generating Cypher for question: {state['question']}")
+        logger.info(f"State keys before LLM call: {list(state.keys())}")
+        
+        try:
+            cypher_query = await llm_client.generate_response(messages)
+            logger.info(f"Raw LLM response type: {type(cypher_query)}")
+            logger.info(f"Raw LLM response: {repr(cypher_query)}")
+            
+            # Handle different response formats
+            if isinstance(cypher_query, dict):
+                logger.info(f"LLM returned dict with keys: {list(cypher_query.keys())}")
+                # Extract content from dict response
+                if 'content' in cypher_query:
+                    cypher_query = cypher_query['content']
+                elif 'text' in cypher_query:
+                    cypher_query = cypher_query['text']
+                elif 'query' in cypher_query:
+                    cypher_query = cypher_query['query']
+                elif 'cypher' in cypher_query:
+                    cypher_query = cypher_query['cypher']
+                else:
+                    logger.warning(f"Dict response doesn't contain expected keys: {list(cypher_query.keys())}")
+                    # Try to convert to string
+                    cypher_query = str(cypher_query)
+            
+            # Convert to string if not already
+            if not isinstance(cypher_query, str):
+                cypher_query = str(cypher_query)
+                logger.info(f"Converted response to string: {repr(cypher_query)}")
+            
+            # Check if the response is JSON
+            if cypher_query.strip().startswith('{'):
+                try:
+                    import json
+                    json_response = json.loads(cypher_query)
+                    logger.info(f"Detected JSON response: {json_response}")
+                    # Extract the query from JSON if it exists
+                    if 'query' in json_response:
+                        cypher_query = json_response['query']
+                        logger.info(f"Extracted query from JSON: {cypher_query}")
+                    elif 'cypher' in json_response:
+                        cypher_query = json_response['cypher']
+                        logger.info(f"Extracted cypher from JSON: {cypher_query}")
+                    elif 'content' in json_response:
+                        cypher_query = json_response['content']
+                        logger.info(f"Extracted content from JSON: {cypher_query}")
+                    else:
+                        logger.warning(f"JSON response doesn't contain expected keys: {list(json_response.keys())}")
+                except json.JSONDecodeError:
+                    logger.info("Response looks like JSON but failed to parse, treating as text")
+                    
+        except Exception as llm_error:
+            logger.error(f"LLM call failed: {llm_error}")
+            logger.error(f"LLM error type: {type(llm_error)}")
+            import traceback
+            logger.error(f"LLM error traceback: {traceback.format_exc()}")
+            raise
+        
+        # Clean up the response (remove markdown formatting if present)
+        try:
+            logger.info("Starting response cleanup...")
+            cypher_query = cypher_query.strip()
+            logger.info(f"After strip: {repr(cypher_query)}")
+            
+            if cypher_query.startswith("```cypher"):
+                logger.info("Removing ```cypher prefix...")
+                cypher_query = cypher_query[9:]
+                logger.info(f"After removing cypher prefix: {repr(cypher_query)}")
+            
+            if cypher_query.startswith("```"):
+                logger.info("Removing ``` prefix...")
+                cypher_query = cypher_query[3:]
+                logger.info(f"After removing prefix: {repr(cypher_query)}")
+            
+            if cypher_query.endswith("```"):
+                logger.info("Removing ``` suffix...")
+                cypher_query = cypher_query[:-3]
+                logger.info(f"After removing suffix: {repr(cypher_query)}")
+            
+            cypher_query = cypher_query.strip()
+            logger.info(f"Final cleaned Cypher query: {repr(cypher_query)}")
+        except Exception as cleanup_error:
+            logger.error(f"Error during response cleanup: {cleanup_error}")
+            logger.error(f"Cleanup error type: {type(cleanup_error)}")
+            import traceback
+            logger.error(f"Cleanup error traceback: {traceback.format_exc()}")
+            raise
+        
+        try:
+            logger.info("Creating return state...")
+            logger.info(f"State keys before return: {list(state.keys())}")
+            logger.info(f"Steps before return: {state.get('steps', [])}")
+            
+            return_state = {
+                **state,
+                "cypher_statement": cypher_query,
+                "next_action": "validate_cypher",
+                "steps": state.get("steps", []) + ["generate_cypher"]
+            }
+            
+            logger.info(f"Return state keys: {list(return_state.keys())}")
+            logger.info(f"Return state steps: {return_state.get('steps', [])}")
+            
+            return return_state
+        except Exception as return_error:
+            logger.error(f"Error creating return state: {return_error}")
+            logger.error(f"Return error type: {type(return_error)}")
+            logger.error(f"State keys: {list(state.keys())}")
+            import traceback
+            logger.error(f"Return error traceback: {traceback.format_exc()}")
+            raise
+    except Exception as e:
+        logger.error(f"Error in generate_cypher: {e}")
+        logger.error(f"State keys: {list(state.keys())}")
+        logger.error(f"State question: {state.get('question', 'NOT_FOUND')}")
+        raise
 
 def validate_cypher(state: Text2CypherState) -> Text2CypherState:
     """
-    Validate the generated Cypher query for syntax and schema correctness.
+    Validate the generated Cypher query for syntax and basic structure correctness.
     """
 
     cypher_query = state["cypher_statement"]
     errors = []
+    warnings = []
     
+    # Basic syntax validation
     try:
         # Test the query with EXPLAIN to check syntax
         explain_query = f"EXPLAIN {cypher_query}"
         db.execute_query(explain_query)
-        
-        # Additional validation checks
-        if not cypher_query.strip():
-            errors.append("Empty Cypher query")
-        
-        # Check for basic Cypher patterns
-        if not any(keyword in cypher_query.upper() for keyword in ["MATCH", "RETURN"]):
-            errors.append("Query must contain MATCH and RETURN clauses")
-            
     except Exception as e:
         errors.append(f"Syntax error: {str(e)}")
+        # If syntax is broken, don't continue with other validation
+        return {
+            **state,
+            "cypher_errors": errors,
+            "next_action": "correct_cypher",
+            "steps": state["steps"] + ["validate_cypher"]
+        }
+    
+    # Basic structure validation
+    if not cypher_query.strip():
+        errors.append("Empty Cypher query")
+    
+    if not any(keyword in cypher_query.upper() for keyword in ["MATCH", "RETURN"]):
+        errors.append("Query must contain MATCH and RETURN clauses")
+    
+    # Check for common query structure issues
+    if "LIMIT" not in cypher_query.upper():
+        warnings.append("Consider adding LIMIT clause to prevent large result sets")
+    
+    if "DISTINCT" not in cypher_query.upper() and "count(" in cypher_query.lower():
+        warnings.append("Consider using DISTINCT to avoid duplicate results")
+    
+    if "ORDER BY" not in cypher_query.upper() and "RETURN" in cypher_query.upper():
+        warnings.append("Consider adding ORDER BY for consistent result ordering")
+    
+    # Check for potential performance issues
+    if cypher_query.count("MATCH") > 3:
+        warnings.append("Query has many MATCH clauses - consider optimization")
+    
+    if "OPTIONAL MATCH" not in cypher_query and "WHERE" in cypher_query:
+        warnings.append("Consider using OPTIONAL MATCH for nullable relationships")
     
     # Determine next action based on validation results
     if errors:
@@ -161,45 +325,66 @@ def validate_cypher(state: Text2CypherState) -> Text2CypherState:
     else:
         next_action = "execute_cypher"
     
-    return {
+    # Add warnings to the state for informational purposes
+    validation_result = {
         **state,
         "cypher_errors": errors,
+        "cypher_warnings": warnings,
         "next_action": next_action,
         "steps": state["steps"] + ["validate_cypher"]
     }
+    
+    # Log validation results
+    if errors:
+        logger.warning(f"Cypher validation found {len(errors)} errors: {errors}")
+    if warnings:
+        logger.info(f"Cypher validation found {len(warnings)} warnings: {warnings}")
+    
+    return validation_result
 
 async def correct_cypher(state: Text2CypherState) -> Text2CypherState:
     """
-    Correct the Cypher query based on validation errors.
+    Intelligently correct the Cypher query based on validation errors with dynamic schema guidance.
     """
     schema_context = await schema_cache_manager.get_schema()
     
-    correct_prompt = """You are a Cypher expert reviewing a statement written by a junior developer. 
-    You need to correct the Cypher statement based on the provided errors. 
-    Do not wrap the response in any backticks or anything else. 
-    Respond with a Cypher statement only!
+    # Get correction rules for Cypher error correction
+    dynamic_correction_rules = get_correction_rules()
     
-    Check for invalid syntax or semantics and return a corrected Cypher statement.
+    # Build detailed error analysis
+    error_analysis = "\n".join([f"- {error}" for error in state.get("cypher_errors", [])])
+    warning_analysis = "\n".join([f"- {warning}" for warning in state.get("cypher_warnings", [])])
+    
+    correct_prompt = f"""You are an expert Neo4j Cypher query generator fixing a query written by a junior developer. 
+    You need to correct the Cypher statement based on the provided errors and warnings.
+    
+    CRITICAL: Return ONLY the corrected Cypher query. Do not wrap in backticks, code blocks, or any other formatting.
+    Return the raw Cypher query only!
 
-    Schema:
-    {schema}
+    DATABASE SCHEMA:
+    {schema_context}
 
-    The question is:
-    {question}
+    {dynamic_correction_rules}
 
-    The Cypher statement is:
-    {cypher}
+    The original question is:
+    {{question}}
 
-    The errors are:
-    {errors}
+    The problematic Cypher statement is:
+    {{cypher}}
 
-    Corrected Cypher statement:"""
+    The validation errors found:
+    {{errors}}
+
+    The validation warnings found:
+    {{warnings}}
+
+    CORRECTED CYPHER STATEMENT:"""
     
     messages = [{"role": "user", "content": correct_prompt.format(
         question=state["question"],
-        errors="\n".join(state["cypher_errors"]),
-        cypher=state["cypher_statement"],
-        schema=schema_context
+        errors=error_analysis,
+        warnings=warning_analysis,
+        cypher=state["cypher_statement"]
     )}]
     corrected_cypher = await llm_client.generate_response(messages)
     
@@ -212,6 +397,9 @@ async def correct_cypher(state: Text2CypherState) -> Text2CypherState:
     if corrected_cypher.endswith("```"):
         corrected_cypher = corrected_cypher[:-3]
     corrected_cypher = corrected_cypher.strip()
+    
+    # Log the correction
+    logger.info(f"Corrected Cypher query: {corrected_cypher}")
     
     return {
         "cypher_statement": corrected_cypher,
@@ -247,16 +435,18 @@ async def generate_final_answer(state: Text2CypherState) -> OutputState:
     Focus on code analysis, dependencies, vulnerabilities, and software development topics.
     
     CRITICAL INSTRUCTIONS:
-    - If the question asks "What CVEs affect X" and the results show CVEs, then X IS affected by those CVEs
-    - The database query used the AFFECTS relationship to find CVEs linked to the component
-    - If results are found, the component IS affected by the listed CVEs
-    - Do NOT say "no data found" or "no CVEs affect" when results are present
+    - If the question asks about files with most versions AND CVEs, analyze both aspects
+    - If results show files with version counts, mention which files have the most versions
+    - If results show CVEs affecting those files, clearly state which CVEs impact which files
+    - If no CVEs are found for files with versions, state that clearly
+    - If the question was about CVEs and results show CVEs, state that the component is affected
     - The database relationships are definitive - trust them over content analysis
     
-    SPECIFIC RULES:
-    - If results contain CVE IDs, descriptions, and scores, present them as affecting the component
-    - If the question was about CVEs and results show CVEs, state that the component is affected
-    - Never dismiss results based on CVE description content
+    SPECIFIC RULES FOR FILE VERSIONS + CVEs:
+    - If results contain file paths and version counts, list the files with most versions
+    - If results contain CVE IDs for those files, list which CVEs affect which files
+    - If no CVEs are found for files with versions, say "No CVEs were found affecting these files"
+    - Always provide specific file names and CVE IDs when available
     
     Use the following results retrieved from a code analysis database to provide
     a succinct, definitive answer to the user's question.
@@ -422,3 +612,91 @@ async def text2cypher(query: str) -> dict:
             "generated_query": "",
             "explanation": f"Error: {str(e)}"
         }
+
+def get_schema_rules() -> str:
+    """
+    Generate schema rules for Cypher generation prompts.
+    """
+    return """CRITICAL QUERY GENERATION RULES - YOU MUST FOLLOW THESE EXACTLY:
+
+QUERY GENERATION RULES:
+1. ALWAYS use exact node labels and relationship types from the schema above
+2. ALWAYS use correct relationship direction (arrows show direction)
+3. ALWAYS use exact property names from the schema above
+4. ALWAYS include LIMIT clauses (typically 50-100) for large result sets
+5. ALWAYS use DISTINCT to avoid duplicate results
+6. ALWAYS include relevant properties in RETURN clause
+7. ALWAYS use proper WHERE clauses for filtering
+8. ALWAYS order results by relevant criteria (severity DESC, count DESC, etc.)
+9. ALWAYS use OPTIONAL MATCH when relationships might not exist
+10. NEVER invent node labels, relationships, or properties not in the schema above
+11. CRITICAL: For File nodes, ALWAYS use f.path (not f.name) when filtering by filename or filepath
+12. CRITICAL: Use CONTAINS for partial file name matches (e.g., f.path CONTAINS 'filename.java')
+
+FEW-SHOT LEARNING EXAMPLES:
+
+Example 1 - Security Analysis:
+Question: 'Show me high severity CVEs affecting our dependencies'
+Cypher: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency) WHERE cve.cvss_score >= 7.0 RETURN dep.name, cve.id, cve.cvss_score ORDER BY cve.cvss_score DESC LIMIT 50
+
+Example 2 - Complex Methods:
+Question: 'Find methods with more than 50 lines'
+Cypher: MATCH (m:Method)<-[:DECLARES]-(f:File) WHERE m.estimated_lines > 50 RETURN f.path, m.name, m.estimated_lines ORDER BY m.estimated_lines DESC LIMIT 50
+
+Example 2b - File-specific Query (IMPORTANT - Always use f.path for file matching):
+Question: 'Which developers worked on GraphsTest.java?'
+Cypher: MATCH (dev:Developer)-[:AUTHORED]->(c:Commit)-[:CHANGED]->(fv:FileVer)-[:OF_FILE]->(f:File) WHERE f.path CONTAINS 'GraphsTest.java' RETURN DISTINCT dev.name, dev.email ORDER BY dev.name LIMIT 50
+
+Example 3 - Developer Activity:
+Question: 'Who are the most active developers?'
+Cypher: MATCH (dev:Developer)-[:AUTHORED]->(c:Commit) RETURN dev.name, count(c) as commits ORDER BY commits DESC LIMIT 50
+
+Example 4 - Method Calls:
+Question: 'Show me method call relationships'
+Cypher: MATCH (m1:Method)-[:CALLS]->(m2:Method) RETURN m1.name, m2.name LIMIT 50
+
+Example 5 - Large Files:
+Question: 'Which files are too large?'
+Cypher: MATCH (f:File) WHERE f.total_lines > 1000 RETURN f.path, f.total_lines ORDER BY f.total_lines DESC LIMIT 50
+
+
+Example 6 - File Versions Query:
+Question: 'Which files have most versions?'
+Cypher: MATCH (fv:FileVer)-[:OF_FILE]->(f:File) RETURN f.path, count(fv) as version_count ORDER BY version_count DESC LIMIT 50
+
+Example 7 - Complex Query (File Versions + CVEs):
+Question: 'Which files have most versions? Are there any CVEs impacting them?'
+Cypher: MATCH (fv:FileVer)-[:OF_FILE]->(f:File) WITH f, count(fv) as version_count ORDER BY version_count DESC LIMIT 10 OPTIONAL MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(imp:Import)<-[:IMPORTS]-(f) RETURN f.path, version_count, collect(DISTINCT cve.id) as affecting_cves ORDER BY version_count DESC
+
+VALIDATION CHECKLIST (verify your query has):
+✅ Correct node labels from the schema above
+✅ Correct relationship types from the schema above
+✅ Correct relationship direction (arrows point right way)
+✅ Correct property names from the schema above
+✅ LIMIT clause included
+✅ DISTINCT used if needed
+✅ Proper WHERE clauses
+✅ Relevant properties in RETURN
+✅ Logical ordering (ORDER BY)"""
+
+def get_correction_rules() -> str:
+    """
+    Generate correction rules for Cypher error correction.
+    """
+    return """COMMON CORRECTION PATTERNS:
+1. Node label errors: Replace invalid labels with correct ones from the schema above
+2. Relationship errors: Use exact relationship types and correct direction from the schema above
+3. Property errors: Use exact property names from the schema above
+4. Missing LIMIT: Add "LIMIT 50" or "LIMIT 100" to prevent large results
+5. Missing DISTINCT: Add "DISTINCT" before RETURN for unique results
+6. Missing ORDER BY: Add "ORDER BY" for consistent sorting
+7. Relationship direction: Ensure arrows point in correct semantic direction
+
+EXAMPLE CORRECTIONS:
+- Wrong: MATCH (f:file) RETURN f.path → Correct: MATCH (f:File) RETURN f.path
+- Wrong: MATCH (cve:CVE)<-[:AFFECTS]-(dep:Dependency) → Correct: MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)
+- Wrong: MATCH (m:Method) RETURN m.complexity → Correct: MATCH (m:Method) RETURN m.cyclomatic_complexity
+- Wrong: MATCH (f:File) RETURN f.path → Correct: MATCH (f:File) RETURN f.path LIMIT 50
+- Wrong: MATCH (cve:CVE) RETURN cve.id, cve.score → Correct: MATCH (cve:CVE) RETURN cve.id, cve.cvss_score ORDER BY cve.cvss_score DESC LIMIT 50
+- Wrong: WHERE f.name = 'GraphsTest.java' → Correct: WHERE f.path CONTAINS 'GraphsTest.java'
+- Wrong: WHERE f.name CONTAINS 'Test' → Correct: WHERE f.path CONTAINS 'Test'"""
