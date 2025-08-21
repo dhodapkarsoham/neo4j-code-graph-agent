@@ -1,5 +1,41 @@
 # Text2Cypher: Natural Language to Cypher Query Generation
+# Text2Cypher Graph Model Docs Integration
 
+## Overview
+
+The Text2Cypher capability allows users to ask questions in natural language and automatically generates and executes Cypher queries against the Neo4j code graph database. This feature leverages the Azure OpenAI LLM to understand user intent and convert it into valid Cypher syntax.
+
+This project can optionally augment the dynamic database schema with curated graph model documentation to improve Cypher generation quality.
+
+## Quick start (concise)
+- Ask questions in the UI or via the `/api/text2cypher` endpoint.
+- Toggle curated docs via environment flags (see below).
+- For LLM-focused, machine-readable semantics, the app can fetch an unlisted page:
+  - LLM docs: `https://woolford.io/neo4j-code-graph/neo4j-code-graph/latest/graph-model-llm.html`
+  - This page contains extra details for the model without cluttering human-facing docs.
+
+
+## Toggle
+- Global default via `.env`:
+  - `TEXT2CYPHER_INCLUDE_GRAPH_DOCS=true|false`
+  - `TEXT2CYPHER_USE_DOCS_ONLY=true|false` (if true, curated docs replace dynamic schema)
+- Per-request overrides:
+  - API `/api/text2cypher` accepts body `{ "question": "...", "include_graph_docs": true, "use_docs_only": true }`
+  - Agent tool execution via `text2cypher` supports parameters `include_graph_docs`, `use_docs_only`.
+
+## Source
+- Remote URL: `GRAPH_MODEL_DOCS_URL=https://woolford.io/neo4j-code-graph/neo4j-code-graph/latest/graph-model-llm.html`
+- Cache TTL: `GRAPH_MODEL_DOCS_TTL_SECONDS=3600` (seconds)
+
+## How it works
+- `SchemaCacheManager` builds a dynamic schema snapshot from Neo4j.
+- `GraphDocsCacheManager` fetches curated docs once and caches them.
+- `text2cypher` includes curated LLM docs as additional context (append mode) or as the primary schema (docs-only), depending on flags.
+
+## Notes
+- If docs are unavailable or fail to load, `text2cypher` gracefully proceeds without them.
+- Large docs increase prompt size; use the TTL to avoid repeated fetches.
+- Prefer append mode for reliability; use docs-only when the LLM-friendly page is up-to-date.
 ## Overview
 
 The Text2Cypher capability allows users to ask questions in natural language and automatically generates and executes Cypher queries against the Neo4j code graph database. This feature leverages the Azure OpenAI LLM to understand user intent and convert it into valid Cypher syntax.
@@ -56,25 +92,10 @@ Result:
 - "Show me methods with high centrality scores"
 - "Which classes extend other classes?"
 
-## Database Schema Knowledge
+## Minimal schema primer (human-facing)
 
-The text2cypher tool understands the complete code graph schema:
-
-### Node Types
-- **File**: Source code files with properties like `path`, `total_lines`, `method_count`
-- **Method**: Code methods with `name`, `estimated_lines`, `is_public`, `pagerank_score`
-- **Class**: Classes with `name`, `package`, inheritance relationships
-- **CVE**: Security vulnerabilities with `cvss_score`, `severity`
-- **Developer**: Contributors with `name`, `email`
-- **ExternalDependency**: Third-party packages with `package`, `version`, `license`
-
-### Relationships
-- `File-[:DEPENDS_ON]->ExternalDependency`
-- `File-[:DECLARES]->Method`
-- `CVE-[:AFFECTS]->ExternalDependency`
-- `Developer-[:AUTHORED]->Commit`
-- `Method-[:CALLS]->Method`
-- `File-[:CO_CHANGED]->File`
+For the full graph model, see the main docs: `Graph model`.
+This page intentionally avoids duplicating the entire schema.
 
 ## Implementation Details
 
@@ -159,30 +180,25 @@ No additional configuration needed - the feature uses existing:
 - Read `explanation` for query logic
 - Use `db_metrics` for performance info
 
-## Advanced Usage
+## Advanced usage
 
-### Custom Parameters
-
-The tool accepts a `question` parameter:
-
+### Programmatic (agent tool selection)
+Use the built-in tool registry from Python to invoke Text2Cypher directly:
 ```python
-tool_registry.execute_tool("text2cypher", {"question": "Find vulnerable files"})
+from src.tools import tool_registry
+
+result = tool_registry.execute_tool(
+    "text2cypher",
+    {"question": "Find vulnerable files"}
+)
 ```
 
-### Response Format
-
-```python
-{
-    "tool_name": "text2cypher",
-    "description": "Generated and executed Cypher query for: [question]",
-    "category": "Query",
-    "results": [...],          # Query results
-    "result_count": 25,        # Number of results
-    "db_metrics": {...},       # Database performance metrics
-    "generated_query": "...",  # The Cypher query generated
-    "explanation": "...",      # LLM explanation of the query
-    "user_question": "..."     # Original user question
-}
+### Direct API (curl)
+Quickly test via the REST endpoint:
+```bash
+curl -s http://localhost:8000/api/text2cypher \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Who worked on Louvain?","include_graph_docs":true,"use_docs_only":false}'
 ```
 
 ## Troubleshooting
@@ -208,16 +224,10 @@ tool_registry.execute_tool("text2cypher", {"question": "Find vulnerable files"})
 3. Test similar queries manually in Neo4j Browser
 4. Verify database connection and data
 
-## Future Enhancements
+## Appendix: LLM guidance
 
-Potential improvements for the text2cypher feature:
-
-- **Query Validation**: Syntax checking before execution
-- **Result Caching**: Cache common query patterns
-- **Query Optimization**: Suggest performance improvements
-- **Interactive Refinement**: Allow users to modify generated queries
-- **Query History**: Track and reuse successful patterns
-- **Custom Schema**: Support for domain-specific extensions
+For model-facing canonical chains and generation rules, see the unlisted LLM page:
+`https://woolford.io/neo4j-code-graph/neo4j-code-graph/latest/graph-model-llm.html`
 
 ## Security Considerations
 
