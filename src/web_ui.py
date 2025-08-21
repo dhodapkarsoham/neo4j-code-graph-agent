@@ -1778,23 +1778,43 @@ async def text2cypher_direct(request: Request) -> Dict[str, Any]:
     try:
         data = await request.json()
         user_question = data.get("question", "")
+        include_graph_docs = bool(data.get("include_graph_docs", False))
+        use_docs_only = bool(data.get("use_docs_only", False))
         
         if not user_question:
             raise HTTPException(status_code=400, detail="Question is required")
         
-        # Get dynamic schema from tools module (lazy loaded and cached)
-        from src.tools import tool_registry
-        schema_info = await tool_registry._get_database_schema_context()
+        # Prepare schema/docs for direct prompt
+        from src.tools import tool_registry, graph_docs_cache_manager
+        graph_docs = ""
+        if include_graph_docs:
+            try:
+                graph_docs = await graph_docs_cache_manager.get_graph_docs()
+            except Exception:
+                graph_docs = ""
+        # Only fetch DB schema if not using docs-only or docs unavailable
+        schema_info = ""
+        if not (include_graph_docs and use_docs_only and graph_docs):
+            schema_info = await tool_registry._get_database_schema_context_async()
         
         # Try to use LLM if available
         try:
             from src.llm import llm_client
             
             if llm_client.is_configured():
+                # If use_docs_only is set and docs exist, replace schema section with curated docs
+                if include_graph_docs and use_docs_only and graph_docs:
+                    schema_block = f"CURATED GRAPH MODEL DOCS (used as schema):\n{graph_docs}\n"
+                    additional_context = ""
+                else:
+                    schema_block = schema_info
+                    additional_context = f"\nADDITIONAL CONTEXT - GRAPH MODEL DOCS (curated):\n{graph_docs}\n" if graph_docs else ""
                 system_prompt = f"""You are an expert Neo4j Cypher query generator for a code analysis graph database.
 
 DATABASE SCHEMA:
-{schema_info}
+{schema_block}
+
+{additional_context}
 
 TASK: Convert the user's natural language question into a valid Cypher query.
 
@@ -1808,6 +1828,19 @@ GUIDELINES:
 7. Use OPTIONAL MATCH when relationships might not exist
 8. Order results by relevant criteria (e.g., severity, count, importance)
 
+- CRITICAL RULES (NON-NEGOTIABLE):
+- Use the canonical commit->file chain exactly as:
+  (Commit)-[:CHANGED]->(FileVer)-[:OF_FILE]->(File)
+  NEVER match (Commit)-[:CHANGED]->(File).
+- For developers:
+  (Developer)-[:AUTHORED]->(Commit)
+- For declarations:
+  (File)-[:DECLARES]->(Method)
+- For imports and dependencies:
+  (File)-[:IMPORTS]->(Import)-[:DEPENDS_ON]->(ExternalDependency)
+- For file path filtering, ALWAYS use f.path (not f.name) and prefer CONTAINS for partial matches.
+- Do not compress multi-hop relationships into a single hop; use the exact edge types and directions from the schema.
+
 RESPONSE FORMAT (JSON):
 {{
     "query": "MATCH ... RETURN ... LIMIT 25",
@@ -1819,7 +1852,7 @@ Be precise with property names and relationship directions."""
                 response = await llm_client.generate_response(
                     messages=[{"role": "user", "content": f"Question: {user_question}"}],
                     system_prompt=system_prompt,
-                    temperature=0.1,
+                    temperature=0.0,
                     max_tokens=1000,
                 )
                 
