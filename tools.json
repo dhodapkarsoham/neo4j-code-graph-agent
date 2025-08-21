@@ -43,7 +43,7 @@
     "name": "co_changed_files_analysis",
     "description": "Find files that are frequently changed together (high coupling)",
     "category": "Architecture",
-    "query": "MATCH (f1:File)-[:CHANGED_IN]->(commit:Commit)-[:CHANGED]->(f2:FileVer)-[:OF_FILE]->(f3:File)\nWHERE f1 <> f3\nWITH f1, f3, count(commit) as co_changes\nWHERE co_changes > 3\nRETURN f1.path as file1,\n       f3.path as file2,\n       co_changes as change_frequency,\n       'High coupling detected' as insight\nORDER BY co_changes DESC\nLIMIT 25",
+    "query": "MATCH (f1:File)-[cc:CO_CHANGED]->(f2:File)\nWHERE cc.support > 5 AND cc.confidence > 0.6\nRETURN f1.path, f2.path, cc.support, cc.confidence\nORDER BY cc.confidence DESC\nLIMIT 25",
     "parameters": null,
     "is_prebuilt": true
   },

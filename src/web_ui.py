@@ -291,11 +291,12 @@ async def get_ui() -> HTMLResponse:
             const [llmStatus, setLlmStatus] = useState(null); // true/false/null
             const [llmMeta, setLlmMeta] = useState({ last_success_at: null, last_error_at: null });
             const [showLlmTip, setShowLlmTip] = useState(false);
+            const [isQueryActive, setIsQueryActive] = useState(false); // Track active queries
             const loadHealth = async () => {
                 try {
                     setChecking(true);
                     const controller = new AbortController();
-                    const id = setTimeout(() => controller.abort(), 3000);
+                    const id = setTimeout(() => controller.abort(), 5000); // Increased timeout for startup
                     // jitter to avoid sync storms
                     await new Promise(r => setTimeout(r, Math.random()*500));
                     const response = await fetch('/api/health', { signal: controller.signal });
@@ -313,7 +314,11 @@ async def get_ui() -> HTMLResponse:
                     setLlmMeta({ last_success_at: ls.last_success_at || null, last_error_at: ls.last_error_at || null });
                     clearTimeout(id);
                 } catch (e) {
-                    setNeo4jStatus(false);
+                    // Only set to false if we've had at least one successful check before
+                    // AND we're not currently processing a query (which might cause temporary timeouts)
+                    if (neo4jStatus !== null && !isQueryActive) {
+                        setNeo4jStatus(false);
+                    }
                 } finally {
                     setChecking(false);
                 }
@@ -341,6 +346,7 @@ async def get_ui() -> HTMLResponse:
                 
                 setQuery(originalQuery);
                 setLoading(true);
+                setIsQueryActive(true); // Mark query as active to prevent false offline warnings
                 
                 try {
                     // Same logic as sendQuery but with the original query
@@ -351,6 +357,7 @@ async def get_ui() -> HTMLResponse:
                     setMessages(prev => [...prev, errorMessage]);
                 } finally {
                     setLoading(false);
+                    setIsQueryActive(false); // Mark query as complete
                 }
             };
 
@@ -527,6 +534,7 @@ async def get_ui() -> HTMLResponse:
                 if (!query.trim()) return;
                 
                 setLoading(true);
+                setIsQueryActive(true); // Mark query as active to prevent false offline warnings
                 const userMessage = { role: 'user', content: query };
                 setMessages(prev => [...prev, userMessage]);
                 
@@ -538,6 +546,7 @@ async def get_ui() -> HTMLResponse:
                     setMessages(prev => [...prev, errorMessage]);
                 } finally {
                     setLoading(false);
+                    setIsQueryActive(false); // Mark query as complete
                 }
             };
 
@@ -1036,8 +1045,8 @@ async def get_ui() -> HTMLResponse:
 
 
 
-                    {/* Slim offline banner */}
-                    {neo4jStatus === false && (
+                    {/* Slim offline banner - only show if we've confirmed it's offline, not during startup or active queries */}
+                    {neo4jStatus === false && !checking && !isQueryActive && (
                         <div className="w-full bg-red-50 text-red-700 text-sm border-b border-red-200 transition-opacity duration-200 ease-out">
                             <div className="container mx-auto px-4 py-2 flex items-center justify-between">
                                 <div className="flex items-center">
