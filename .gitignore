@@ -59,12 +59,14 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+databases.json
 
 # Temporary files
 *.tmp
 *.temp
 temp/
 tmp/
+code-graph-agent.code-workspace
 
 # Coverage reports
 htmlcov/

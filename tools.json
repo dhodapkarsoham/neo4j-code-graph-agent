@@ -94,5 +94,15 @@
     "query": "MATCH (cve:CVE)-[:AFFECTS]->(dep:ExternalDependency)<-[:DEPENDS_ON]-(:Import)<-[:IMPORTS]-(file:File)\nWHERE cve.severity = \"CRITICAL\"\nRETURN DISTINCT cve.id as cve_id, collect(file.name) as affected_files\nORDER BY affected_files DESC",
     "parameters": null,
     "is_prebuilt": false
+  },
+  {
+    "name": "text2cypher",
+    "description": "ENHANCED: Advanced natural language to Cypher with multi-step validation, error correction, and robust workflow. Includes guardrails, syntax validation, and automatic error correction. Perfect for specific questions about dependencies, files, classes, methods, developers, CVEs, and relationships.",
+    "category": "Query",
+    "query": "",
+    "parameters": {
+      "question": "string"
+    },
+    "is_prebuilt": true
   }
 ]

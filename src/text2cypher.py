@@ -22,6 +22,7 @@ class Text2CypherState(TypedDict):
     next_action: Literal["generate_cypher", "correct_cypher", "execute_cypher", "end"]
     steps: List[str]
     generated_query: str
+    original_query: str  # Track the original generated query
     explanation: str
 
 # Input/Output state definitions
@@ -33,6 +34,7 @@ class OutputState(TypedDict):
     steps: List[str]
     cypher_statement: str
     generated_query: str
+    original_query: str  # Track the original generated query
     explanation: str
 
 # Constants
@@ -250,6 +252,7 @@ async def generate_cypher(state: Text2CypherState) -> Text2CypherState:
             return_state = {
                 **state,
                 "cypher_statement": cypher_query,
+                "original_query": cypher_query,  # Store the original generated query
                 "next_action": "validate_cypher",
                 "steps": state.get("steps", []) + ["generate_cypher"]
             }
@@ -466,7 +469,8 @@ async def generate_final_answer(state: Text2CypherState) -> OutputState:
         "answer": final_answer,
         "steps": state["steps"] + ["generate_final_answer"],
         "cypher_statement": state["cypher_statement"],
-        "generated_query": state["cypher_statement"],
+        "generated_query": state["cypher_statement"],  # Final executed query (could be corrected)
+        "original_query": state.get("original_query", state["cypher_statement"]),  # Original generated query
         "explanation": "Generated Cypher query for this analysis"
     }
 
@@ -559,6 +563,7 @@ async def text2cypher(query: str) -> dict:
             "next_action": "generate_cypher",
             "steps": [],
             "generated_query": "",
+            "original_query": "",  # Track the original generated query
             "explanation": ""
         }
         
@@ -598,6 +603,7 @@ async def text2cypher(query: str) -> dict:
                 "steps": state["steps"],
                 "cypher_statement": state.get("cypher_statement", ""),
                 "generated_query": state.get("cypher_statement", ""),
+                "original_query": state.get("original_query", state.get("cypher_statement", "")),
                 "explanation": f"Workflow ended at step: {state.get('next_action', 'unknown')}"
             }
         
@@ -610,6 +616,7 @@ async def text2cypher(query: str) -> dict:
             "steps": ["error"],
             "cypher_statement": "",
             "generated_query": "",
+            "original_query": "",
             "explanation": f"Error: {str(e)}"
         }
 
@@ -631,7 +638,7 @@ QUERY GENERATION RULES:
 9. ALWAYS use OPTIONAL MATCH when relationships might not exist
 10. NEVER invent node labels, relationships, or properties not in the schema above
 11. CRITICAL: For File nodes, ALWAYS use f.path (not f.name) when filtering by filename or filepath
-12. CRITICAL: Use CONTAINS for partial file name matches (e.g., f.path CONTAINS 'filename.java')
+12. CRITICAL: Use CONTAINS for partial file name matches and Developer name matches (e.g., f.path CONTAINS 'filename.java' or dev.name CONTAINS 'John')
 
 FEW-SHOT LEARNING EXAMPLES:
 

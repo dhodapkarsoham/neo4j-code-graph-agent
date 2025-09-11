@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 from datetime import datetime, timedelta
 
-from src.database import db
+from src.database import db, db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -218,8 +218,8 @@ class ToolRegistry:
             query_params.update(parameters)
 
         try:
-            results = db.execute_query(tool.query, query_params)
-            metrics = getattr(db, "last_metrics", None)
+            results = db_manager.execute_query(tool.query, query_params)
+            metrics = db_manager.last_metrics
             return {
                 "tool_name": tool.name,
                 "description": tool.description,
@@ -262,6 +262,7 @@ class ToolRegistry:
                 "results": result.get("answer", "No results generated"),
                 "result_count": 1,  # Enhanced version returns a single answer
                 "generated_query": result.get("generated_query", result.get("cypher_statement", "")),
+                "original_query": result.get("original_query", result.get("generated_query", result.get("cypher_statement", ""))),
                 "explanation": result.get("explanation", ""),
                 "user_question": user_question,
                 "steps": result.get("steps", []),
@@ -387,14 +388,14 @@ class SchemaCacheManager:
     
     async def _fetch_schema_from_database(self) -> str:
         """Fetch schema from database with optimized queries."""
-        from src.database import db
+        from src.database import db_manager
         
         schema_context = "DATABASE SCHEMA:\n\n"
         
         # Get node labels (single query)
         schema_context += "NODE LABELS:\n"
         try:
-            labels_result = db.execute_query("CALL db.labels() YIELD label RETURN label ORDER BY label")
+            labels_result = db_manager.execute_query("CALL db.labels() YIELD label RETURN label ORDER BY label")
             for row in labels_result:
                 schema_context += f"- {row['label']}\n"
         except Exception as e:
@@ -406,7 +407,7 @@ class SchemaCacheManager:
         # Get relationship types (single query)
         schema_context += "RELATIONSHIP TYPES:\n"
         try:
-            rels_result = db.execute_query("CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType")
+            rels_result = db_manager.execute_query("CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType")
             for row in rels_result:
                 schema_context += f"- {row['relationshipType']}\n"
         except Exception as e:
@@ -428,7 +429,7 @@ class SchemaCacheManager:
                    labels(endNode(r)) as endLabels
             LIMIT 1
             """
-            patterns_result = db.execute_query(pattern_query)
+            patterns_result = db_manager.execute_query(pattern_query)
             for row in patterns_result:
                 rel_type = row['relationshipType']
                 start_labels = row['startLabels']
@@ -444,12 +445,12 @@ class SchemaCacheManager:
         schema_context += "NODE PROPERTIES:\n"
         try:
             # Get properties for each label individually to avoid complex queries
-            labels_result = db.execute_query("CALL db.labels() YIELD label")
+            labels_result = db_manager.execute_query("CALL db.labels() YIELD label")
             for row in labels_result:
                 label_name = row['label']
                 try:
                     # Simple query to get properties for this label
-                    props = db.execute_query(f"MATCH (n:{label_name}) RETURN keys(n) as properties LIMIT 1")
+                    props = db_manager.execute_query(f"MATCH (n:{label_name}) RETURN keys(n) as properties LIMIT 1")
                     if props and props[0]['properties']:
                         schema_context += f"{label_name}:\n"
                         properties = props[0]['properties']

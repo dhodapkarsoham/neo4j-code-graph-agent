@@ -117,6 +117,7 @@ class CodeGraphAgent:
                 if tool_name == "text2cypher":
                     reasoning_step.update({
                         "generated_query": result.get("generated_query", ""),
+                        "original_query": result.get("original_query", ""),
                         "explanation": result.get("explanation", ""),
                         "results": result.get("results", []),
                     })

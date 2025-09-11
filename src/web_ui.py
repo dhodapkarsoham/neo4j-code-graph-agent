@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from src.agent import agent
 from src.config import settings
-from src.database import db
+from src.database import db, db_manager
 from src.tools import tool_registry
 
 # Configure logging
@@ -292,6 +292,19 @@ async def get_ui() -> HTMLResponse:
             const [llmMeta, setLlmMeta] = useState({ last_success_at: null, last_error_at: null });
             const [showLlmTip, setShowLlmTip] = useState(false);
             const [isQueryActive, setIsQueryActive] = useState(false); // Track active queries
+            
+            // Database management state
+            const [databases, setDatabases] = useState([]);
+            const [currentDatabase, setCurrentDatabase] = useState(null);
+            const [showDatabaseDropdown, setShowDatabaseDropdown] = useState(false);
+            const [showAddDatabase, setShowAddDatabase] = useState(false);
+            const [newDatabase, setNewDatabase] = useState({
+                name: '',
+                uri: '',
+                username: '',
+                password: '',
+                database: 'neo4j'
+            });
             const loadHealth = async () => {
                 try {
                     setChecking(true);
@@ -324,9 +337,88 @@ async def get_ui() -> HTMLResponse:
                 }
             };
             // Initial check
-            useEffect(() => { loadHealth(); }, []);
+            useEffect(() => { loadHealth(); loadDatabases(); }, []);
             // Adaptive polling: faster when offline, slower when healthy
             useEffect(() => { const ms = neo4jStatus === true ? 15000 : 3000; const id = setInterval(loadHealth, ms); return () => clearInterval(id); }, [neo4jStatus]);
+            
+            // Database management functions
+            const loadDatabases = async () => {
+                try {
+                    const response = await fetch('/api/databases');
+                    const data = await response.json();
+                    setDatabases(Object.values(data.connections));
+                    setCurrentDatabase(data.current);
+                } catch (error) {
+                    console.error('Error loading databases:', error);
+                }
+            };
+            
+            const addDatabase = async () => {
+                try {
+                    const response = await fetch('/api/databases', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(newDatabase)
+                    });
+                    
+                    if (response.ok) {
+                        setShowAddDatabase(false);
+                        setNewDatabase({ name: '', uri: '', username: '', password: '', database: 'neo4j' });
+                        loadDatabases();
+                        showNotification('Database connection added successfully!', 'success');
+                    } else {
+                        const errorData = await response.json();
+                        showNotification(`Failed to add database: ${errorData.detail}`, 'error');
+                    }
+                } catch (error) {
+                    console.error('Error adding database:', error);
+                    showNotification('Failed to add database connection', 'error');
+                }
+            };
+            
+            const switchDatabase = async (name) => {
+                try {
+                    const response = await fetch(`/api/databases/${name}/switch`, {
+                        method: 'POST'
+                    });
+                    
+                    if (response.ok) {
+                        setCurrentDatabase(name);
+                        setShowDatabaseDropdown(false);
+                        loadHealth(); // Refresh health status
+                        showNotification(`Switched to database: ${name}`, 'success');
+                    } else {
+                        const errorData = await response.json();
+                        showNotification(`Failed to switch database: ${errorData.detail}`, 'error');
+                    }
+                } catch (error) {
+                    console.error('Error switching database:', error);
+                    showNotification('Failed to switch database', 'error');
+                }
+            };
+            
+            const removeDatabase = async (name) => {
+                if (!confirm(`Are you sure you want to remove the database connection "${name}"?`)) {
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/api/databases/${name}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        loadDatabases();
+                        showNotification(`Database connection "${name}" removed successfully!`, 'success');
+                    } else {
+                        const errorData = await response.json();
+                        showNotification(`Failed to remove database: ${errorData.detail}`, 'error');
+                    }
+                } catch (error) {
+                    console.error('Error removing database:', error);
+                    showNotification('Failed to remove database connection', 'error');
+                }
+            };
 
             const clearChat = () => {
                 setMessages([]);
@@ -801,13 +893,18 @@ async def get_ui() -> HTMLResponse:
                     
                     // Special display for text2cypher results
                     if (step.tool_name === 'text2cypher' && step.generated_query) {
+                        const hasOriginalQuery = step.original_query && step.original_query !== step.generated_query;
+                        
                         stepHtml += `
                             <div class="mt-3">
                                 <details class="rounded-lg border border-gray-200 bg-white">
                                     <summary class="cursor-pointer p-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
                                         <div class="flex items-center space-x-2">
                                             <span class="text-blue-600">🔍</span>
-                                            <span class="font-medium text-gray-900">Generated Cypher Query</span>
+                                            <span class="font-medium text-gray-900">
+                                                ${hasOriginalQuery ? 'Final Executed Cypher Query' : 'Generated Cypher Query'}
+                                                ${hasOriginalQuery ? '<span class="text-xs text-green-600 ml-2">(Corrected)</span>' : ''}
+                                            </span>
                                         </div>
                                         <span class="text-xs text-gray-500">Click to view</span>
                                     </summary>
@@ -816,6 +913,21 @@ async def get_ui() -> HTMLResponse:
                                     </div>
                                 </details>
                                 
+                                ${hasOriginalQuery ? `
+                                    <details class="mt-2 rounded-lg border border-gray-200 bg-white">
+                                        <summary class="cursor-pointer p-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                                            <div class="flex items-center space-x-2">
+                                                <span class="text-orange-600">📝</span>
+                                                <span class="font-medium text-gray-900">Original Generated Query</span>
+                                            </div>
+                                            <span class="text-xs text-gray-500">Click to view</span>
+                                        </summary>
+                                        <div class="border-t border-gray-200 p-3 bg-gray-50">
+                                            <pre class="text-sm p-3 bg-white rounded border overflow-x-auto font-mono text-gray-800">${step.original_query}</pre>
+                                        </div>
+                                    </details>
+                                ` : ''}
+                                
                                 ${step.explanation ? `
                                     <div class="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
                                         <div class="text-sm text-gray-700">
@@ -823,8 +935,6 @@ async def get_ui() -> HTMLResponse:
                                         </div>
                                     </div>
                                 ` : ''}
-                                
-
                             </div>
                         `;
                     }
@@ -1037,6 +1147,78 @@ async def get_ui() -> HTMLResponse:
                                                 )}
                                             </div>
                                         )}
+                                        
+                                        {/* Database Selection Dropdown */}
+                                        <div className="relative inline-block">
+                                            <button
+                                                onClick={() => setShowDatabaseDropdown(!showDatabaseDropdown)}
+                                                className="status-chip glass-effect border border-gray-200 hover:border-blue-300 transition-colors"
+                                                title="Select Database Connection"
+                                            >
+                                                <span className="text-blue-600">🗄️</span>
+                                                <span className="text-gray-700 text-[11px] font-semibold">
+                                                    {currentDatabase || 'DB'}
+                                                </span>
+                                                <span className="text-gray-500 text-[10px]">▼</span>
+                                            </button>
+                                            
+                                            {showDatabaseDropdown && (
+                                                <div className="absolute right-0 mt-2 z-50 bg-white border border-gray-300 rounded-md shadow-lg min-w-[280px]">
+                                                    <div className="p-3 border-b border-gray-200">
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="font-semibold text-gray-800">Database Connections</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    console.log('Add Database button clicked');
+                                                                    console.log('Setting showAddDatabase to true');
+                                                                    setShowAddDatabase(true);
+                                                                    setShowDatabaseDropdown(false);
+                                                                    console.log('Modal should appear now');
+                                                                }}
+                                                                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                                            >
+                                                                + Add
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="max-h-60 overflow-y-auto">
+                                                        {databases.map((db) => (
+                                                            <div key={db.name} className="flex items-center justify-between p-2 hover:bg-gray-50">
+                                                                <div className="flex items-center space-x-2 flex-1">
+                                                                    <span className={`w-2 h-2 rounded-full ${db.connected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                                                                    <div className="flex-1">
+                                                                        <div className="font-medium text-sm">{db.name}</div>
+                                                                        <div className="text-xs text-gray-500 truncate">{db.uri}</div>
+                                                                    </div>
+                                                                    {db.is_current && (
+                                                                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Current</span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center space-x-1">
+                                                                    {!db.is_current && (
+                                                                        <button
+                                                                            onClick={() => switchDatabase(db.name)}
+                                                                            className="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 rounded hover:bg-blue-50"
+                                                                        >
+                                                                            Switch
+                                                                        </button>
+                                                                    )}
+                                                                    {db.name !== 'Default' && (
+                                                                        <button
+                                                                            onClick={() => removeDatabase(db.name)}
+                                                                            className="text-red-600 hover:text-red-800 text-xs px-2 py-1 rounded hover:bg-red-50"
+                                                                        >
+                                                                            Remove
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1217,6 +1399,107 @@ async def get_ui() -> HTMLResponse:
                                         })}
                                     </div>
                                 )}
+                            </div>
+                        )}
+                        
+                        {/* Add Database Modal - Available in Ask Questions tab */}
+                        {showAddDatabase && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                                <div className="glass-effect p-8 rounded-3xl shadow-2xl max-w-2xl w-full">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h3 className="text-2xl font-bold text-gray-800">Add Database Connection</h3>
+                                        <button
+                                            onClick={() => setShowAddDatabase(false)}
+                                            className="text-gray-500 hover:text-gray-700 text-2xl"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                    Connection Name <span className="text-red-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={newDatabase.name}
+                                                    onChange={(e) => setNewDatabase({...newDatabase, name: e.target.value})}
+                                                    className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                    placeholder="e.g., Production DB"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                    Database Name
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={newDatabase.database}
+                                                    onChange={(e) => setNewDatabase({...newDatabase, database: e.target.value})}
+                                                    className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                    placeholder="neo4j"
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                URI <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={newDatabase.uri}
+                                                onChange={(e) => setNewDatabase({...newDatabase, uri: e.target.value})}
+                                                className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                placeholder="bolt://localhost:7687"
+                                            />
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                    Username <span className="text-red-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={newDatabase.username}
+                                                    onChange={(e) => setNewDatabase({...newDatabase, username: e.target.value})}
+                                                    className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                    placeholder="neo4j"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                    Password <span className="text-red-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="password"
+                                                    value={newDatabase.password}
+                                                    onChange={(e) => setNewDatabase({...newDatabase, password: e.target.value})}
+                                                    className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                    placeholder="password"
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex space-x-4 pt-4">
+                                            <button
+                                                onClick={addDatabase}
+                                                className="neo4j-primary text-white px-6 py-3 rounded-xl font-bold text-lg hover:shadow-lg transition-all duration-200"
+                                            >
+                                                🔗 Add Connection
+                                            </button>
+                                            <button
+                                                onClick={() => setShowAddDatabase(false)}
+                                                className="bg-gray-500 text-white px-6 py-3 rounded-xl font-bold text-lg hover:bg-gray-600 transition-all duration-200"
+                                            >
+                                                ❌ Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
@@ -1552,6 +1835,107 @@ async def get_ui() -> HTMLResponse:
                                 )}
                              </div>
                          )}
+                         
+                         {/* Add Database Modal - Available in Tools tab */}
+                         {showAddDatabase && (
+                             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                                 <div className="glass-effect p-8 rounded-3xl shadow-2xl max-w-2xl w-full">
+                                     <div className="flex items-center justify-between mb-6">
+                                         <h3 className="text-2xl font-bold text-gray-800">Add Database Connection</h3>
+                                         <button
+                                             onClick={() => setShowAddDatabase(false)}
+                                             className="text-gray-500 hover:text-gray-700 text-2xl"
+                                         >
+                                             ✕
+                                         </button>
+                                     </div>
+                                     
+                                     <div className="space-y-6">
+                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                             <div>
+                                                 <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                     Connection Name <span className="text-red-500">*</span>
+                                                 </label>
+                                                 <input
+                                                     type="text"
+                                                     value={newDatabase.name}
+                                                     onChange={(e) => setNewDatabase({...newDatabase, name: e.target.value})}
+                                                     className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                     placeholder="e.g., Production DB"
+                                                 />
+                                             </div>
+                                             <div>
+                                                 <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                     Database Name
+                                                 </label>
+                                                 <input
+                                                     type="text"
+                                                     value={newDatabase.database}
+                                                     onChange={(e) => setNewDatabase({...newDatabase, database: e.target.value})}
+                                                     className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                     placeholder="neo4j"
+                                                 />
+                                             </div>
+                                         </div>
+                                         
+                                         <div>
+                                             <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                 URI <span className="text-red-500">*</span>
+                                             </label>
+                                             <input
+                                                 type="text"
+                                                 value={newDatabase.uri}
+                                                 onChange={(e) => setNewDatabase({...newDatabase, uri: e.target.value})}
+                                                 className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                 placeholder="bolt://localhost:7687"
+                                             />
+                                         </div>
+                                         
+                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                             <div>
+                                                 <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                     Username <span className="text-red-500">*</span>
+                                                 </label>
+                                                 <input
+                                                     type="text"
+                                                     value={newDatabase.username}
+                                                     onChange={(e) => setNewDatabase({...newDatabase, username: e.target.value})}
+                                                     className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                     placeholder="neo4j"
+                                                 />
+                                             </div>
+                                             <div>
+                                                 <label className="block text-lg font-semibold mb-2 text-gray-700">
+                                                     Password <span className="text-red-500">*</span>
+                                                 </label>
+                                                 <input
+                                                     type="password"
+                                                     value={newDatabase.password}
+                                                     onChange={(e) => setNewDatabase({...newDatabase, password: e.target.value})}
+                                                     className="w-full p-4 border-2 border-gray-200 rounded-xl text-lg focus:border-blue-500 focus:outline-none"
+                                                     placeholder="password"
+                                                 />
+                                             </div>
+                                         </div>
+                                         
+                                         <div className="flex space-x-4 pt-4">
+                                             <button
+                                                 onClick={addDatabase}
+                                                 className="neo4j-primary text-white px-6 py-3 rounded-xl font-bold text-lg hover:shadow-lg transition-all duration-200"
+                                             >
+                                                 🔗 Add Connection
+                                             </button>
+                                             <button
+                                                 onClick={() => setShowAddDatabase(false)}
+                                                 className="bg-gray-500 text-white px-6 py-3 rounded-xl font-bold text-lg hover:bg-gray-600 transition-all duration-200"
+                                             >
+                                                 ❌ Cancel
+                                             </button>
+                                         </div>
+                                     </div>
+                                 </div>
+                             </div>
+                         )}
                      </div>
                  </div>
              );
@@ -1570,16 +1954,18 @@ async def get_ui() -> HTMLResponse:
 async def health_check() -> Dict[str, Any]:
     """Health check endpoint."""
     try:
-        neo4j_ok = db.test_connection()
+        neo4j_info = db_manager.get_current_connection_info()
     except Exception:
-        neo4j_ok = False
+        neo4j_info = {"connected": False, "uri": "", "database": "", "name": ""}
+    
     return {
         "status": "healthy",
         "message": "Code Graph Agent is running",
         "neo4j": {
-            "connected": bool(neo4j_ok),
-            "uri": settings.neo4j_uri,
-            "database": settings.neo4j_database,
+            "connected": neo4j_info.get("connected", False),
+            "uri": neo4j_info.get("uri", ""),
+            "database": neo4j_info.get("database", ""),
+            "name": neo4j_info.get("name", ""),
         },
         "llm": getattr(
             __import__("src.llm", fromlist=["llm_client"]).llm_client, "status", {}
@@ -1994,6 +2380,124 @@ async def ws_query(websocket: WebSocket) -> None:
         except Exception:
             pass
         await websocket.close()
+
+
+# Database Management Endpoints
+
+@app.get("/api/databases")
+async def list_databases() -> Dict[str, Any]:
+    """List all database connections."""
+    try:
+        connections = db_manager.get_connection_info()
+        current_connection = db_manager.get_current_connection()
+        current_name = current_connection.name if current_connection else None
+        
+        return {
+            "connections": connections,
+            "current": current_name
+        }
+    except Exception as e:
+        logger.error(f"Error listing databases: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/databases")
+async def add_database(request: Request) -> Dict[str, Any]:
+    """Add a new database connection."""
+    try:
+        data = await request.json()
+        name = data.get("name", "").strip()
+        uri = data.get("uri", "").strip()
+        username = data.get("username", "").strip()
+        password = data.get("password", "").strip()
+        database = data.get("database", "neo4j").strip()
+        
+        # Validate required fields
+        if not name:
+            raise HTTPException(status_code=400, detail="Database name is required")
+        if not uri:
+            raise HTTPException(status_code=400, detail="Database URI is required")
+        if not username:
+            raise HTTPException(status_code=400, detail="Username is required")
+        if not password:
+            raise HTTPException(status_code=400, detail="Password is required")
+        
+        # Add the connection
+        success = db_manager.add_connection(name, uri, username, password, database)
+        
+        if success:
+            return {"message": f"Database connection '{name}' added successfully"}
+        else:
+            raise HTTPException(status_code=400, detail="Failed to add database connection")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/databases/{name}")
+async def remove_database(name: str) -> Dict[str, Any]:
+    """Remove a database connection."""
+    try:
+        success = db_manager.remove_connection(name)
+        
+        if success:
+            return {"message": f"Database connection '{name}' removed successfully"}
+        else:
+            raise HTTPException(status_code=404, detail=f"Database connection '{name}' not found or cannot be removed")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error removing database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/databases/{name}/switch")
+async def switch_database(name: str) -> Dict[str, Any]:
+    """Switch to a different database connection."""
+    try:
+        success = db_manager.switch_connection(name)
+        
+        if success:
+            return {"message": f"Switched to database connection '{name}'"}
+        else:
+            raise HTTPException(status_code=400, detail=f"Failed to switch to database connection '{name}'")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error switching database: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/databases/{name}/test")
+async def test_database_connection(name: str) -> Dict[str, Any]:
+    """Test a database connection."""
+    try:
+        # Get the connection
+        connections = db_manager.get_connection_info()
+        if name not in connections:
+            raise HTTPException(status_code=404, detail=f"Database connection '{name}' not found")
+        
+        connection_info = connections[name]
+        connected = connection_info.get("connected", False)
+        
+        return {
+            "name": name,
+            "connected": connected,
+            "uri": connection_info.get("uri", ""),
+            "database": connection_info.get("database", ""),
+            "last_error": connection_info.get("last_error")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error testing database connection: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
